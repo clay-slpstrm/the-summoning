@@ -1,0 +1,47 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Glyph {
+  id          String   @id @default(cuid())
+  walletAddr  String   @db.VarChar(42)
+  epochId     Int
+  txHash      String   @db.VarChar(66) @unique
+  tierName    String   // Whisper, Echo, Tremor, Rupture, Breach
+  tierIndex   Int      // 0-4
+  rune        String   // Unicode rune symbol
+  lore        String   // Lore message text
+  amount      String   // $RITUAL burned (stored as string for BigInt)
+  blockNumber Int
+  createdAt   DateTime @default(now())
+
+  @@index([walletAddr])
+  @@index([epochId])
+  @@index([tierIndex])
+}
+
+model CultRank {
+  walletAddr String   @id @db.VarChar(42)
+  glyphCount Int      @default(0)
+  rankName   String   @default("Uninitiated")
+  rankIndex  Int      @default(0)
+  updatedAt  DateTime @updatedAt
+
+  @@index([glyphCount(sort: Desc)])
+}
+
+model EpochCache {
+  epochId          Int      @id
+  oldOneId         Int
+  threshold        String   // BigInt as string
+  totalCommitted   String   // BigInt as string
+  phase            String   // Gathering, Ritual, Resolved
+  successful       Boolean  @default(false)
+  participantCount Int      @default(0)
+  updatedAt        DateTime @updatedAt
+}

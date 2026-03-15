@@ -1,0 +1,31 @@
+specVersion: 0.0.5
+schema:
+  file: ./schema.graphql
+dataSources:
+  - kind: ethereum
+    name: SummoningEngine
+    network: mainnet # Change to sepolia for testnet
+    source:
+      address: "0x0000000000000000000000000000000000000000" # UPDATE after deployment
+      abi: SummoningEngine
+      startBlock: 0 # UPDATE to deployment block
+    mapping:
+      kind: ethereum/events
+      apiVersion: 0.0.7
+      language: wasm/assemblyscript
+      entities:
+        - Epoch
+        - Sacrifice
+        - Contributor
+        - EpochContribution
+      abis:
+        - name: SummoningEngine
+          file: ./abis/SummoningEngine.json
+      eventHandlers:
+        - event: EpochStarted(uint256,uint256,uint256,uint256)
+          handler: handleEpochStarted
+        - event: RitualSacrifice(indexed uint256,indexed address,uint256,uint256)
+          handler: handleRitualSacrifice
+        - event: EpochResolved(indexed uint256,bool,uint256)
+          handler: handleEpochResolved
+      file: ./src/summoning-engine.ts

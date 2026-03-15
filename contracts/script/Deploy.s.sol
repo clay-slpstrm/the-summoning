@@ -1,0 +1,48 @@
+// SPDX-License-Identifier: MIT
+pragma solidity ^0.8.24;
+
+import "forge-std/Script.sol";
+import "../src/RitualToken.sol";
+import "../src/BondingCurve.sol";
+import "../src/SummoningEngine.sol";
+import "../src/ElderArtifacts.sol";
+
+contract Deploy is Script {
+    function run() external {
+        uint256 deployerPrivateKey = vm.envUint("DEPLOYER_PRIVATE_KEY");
+        address owner = vm.addr(deployerPrivateKey);
+
+        vm.startBroadcast(deployerPrivateKey);
+
+        // 1. Deploy RitualToken
+        RitualToken token = new RitualToken(owner);
+
+        // 2. Deploy BondingCurve
+        BondingCurve curve = new BondingCurve(address(token), owner);
+
+        // 3. Deploy ElderArtifacts
+        ElderArtifacts artifacts = new ElderArtifacts(
+            "https://api.thesummoning.xyz/metadata/",
+            owner
+        );
+
+        // 4. Deploy SummoningEngine
+        SummoningEngine engine = new SummoningEngine(
+            address(token),
+            address(artifacts),
+            owner
+        );
+
+        // 5. Wire contracts together
+        token.setMinter(address(curve));
+        artifacts.setEngine(address(engine));
+
+        vm.stopBroadcast();
+
+        // Log deployed addresses
+        console.log("RitualToken:", address(token));
+        console.log("BondingCurve:", address(curve));
+        console.log("ElderArtifacts:", address(artifacts));
+        console.log("SummoningEngine:", address(engine));
+    }
+}

@@ -1,0 +1,48 @@
+"""
+The Summoning — Subgraph Schema
+Indexes RitualSacrifice events, epoch state, and contribution data.
+"""
+
+type Epoch @entity {
+  id: ID!
+  epochId: BigInt!
+  oldOneId: BigInt!
+  threshold: BigInt!
+  totalCommitted: BigInt!
+  participantCount: BigInt!
+  successful: Boolean!
+  resolved: Boolean!
+  gatheringStart: BigInt!
+  ritualStart: BigInt!
+  ritualEnd: BigInt!
+  sacrifices: [Sacrifice!]! @derivedFrom(field: "epoch")
+}
+
+type Sacrifice @entity {
+  id: ID!
+  epoch: Epoch!
+  wallet: Bytes!
+  amount: BigInt!
+  totalCommittedAfter: BigInt!
+  blockNumber: BigInt!
+  blockTimestamp: BigInt!
+  transactionHash: Bytes!
+}
+
+type Contributor @entity {
+  "wallet address"
+  id: ID!
+  totalBurned: BigInt!
+  sacrificeCount: BigInt!
+  epochsParticipated: BigInt!
+  lastSacrificeBlock: BigInt!
+}
+
+type EpochContribution @entity {
+  "epochId-wallet"
+  id: ID!
+  epochId: BigInt!
+  wallet: Bytes!
+  amount: BigInt!
+  sacrificeCount: BigInt!
+}

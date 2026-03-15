@@ -1,0 +1,112 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@import url('https://fonts.googleapis.com/css2?family=Crimson+Text:ital,wght@0,400;0,600;0,700;1,400;1,600&display=swap');
+
+@layer base {
+  * {
+    box-sizing: border-box;
+  }
+
+  body {
+    @apply bg-void text-slate-200 font-serif antialiased;
+    min-height: 100vh;
+  }
+
+  /* Custom range slider styling */
+  input[type="range"] {
+    @apply appearance-none w-full h-1.5 rounded-full bg-void-border cursor-pointer;
+  }
+
+  input[type="range"]::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    @apply w-4 h-4 rounded-full bg-ritual cursor-pointer;
+    box-shadow: 0 0 8px #7c3aed66;
+  }
+
+  input[type="range"]::-moz-range-thumb {
+    @apply w-4 h-4 rounded-full bg-ritual cursor-pointer border-none;
+    box-shadow: 0 0 8px #7c3aed66;
+  }
+}
+
+@layer components {
+  .card {
+    @apply bg-void-surface border border-void-border rounded-xl p-5;
+  }
+
+  .card-raised {
+    @apply bg-void-raised border border-void-border rounded-lg;
+  }
+
+  .section-label {
+    @apply text-[11px] text-gray-500 uppercase tracking-[3px] font-mono mb-3;
+  }
+
+  .btn-sacrifice {
+    @apply w-full py-3.5 px-6 text-[15px] font-bold tracking-[3px] uppercase
+           border-none rounded-lg cursor-pointer font-serif
+           transition-all duration-300;
+    background: linear-gradient(135deg, #4c1d95, #7c3aed);
+    color: #e2e8f0;
+    box-shadow: 0 0 20px #7c3aed44;
+  }
+
+  .btn-sacrifice:hover:not(:disabled) {
+    box-shadow: 0 0 30px #7c3aed66;
+    transform: translateY(-1px);
+  }
+
+  .btn-sacrifice:disabled {
+    @apply bg-void-border text-gray-600 cursor-not-allowed;
+    box-shadow: none;
+  }
+
+  .btn-quick {
+    @apply py-1 px-2 text-[10px] font-mono rounded
+           border cursor-pointer transition-colors;
+  }
+
+  .btn-quick-active {
+    @apply bg-ritual-dark border-ritual text-ritual-light;
+  }
+
+  .btn-quick-inactive {
+    @apply bg-void-raised border-void-border text-gray-500
+           hover:border-ritual/50 hover:text-gray-400;
+  }
+
+  .tab-btn {
+    @apply flex-1 py-2 px-4 text-[11px] tracking-[3px] uppercase
+           cursor-pointer font-mono border border-void-border
+           transition-colors;
+  }
+
+  .tab-active {
+    @apply bg-void-border text-ritual-light;
+  }
+
+  .tab-inactive {
+    @apply bg-transparent text-gray-500 hover:text-gray-400;
+  }
+
+  .progress-bar-outer {
+    @apply w-full h-2.5 bg-void-border rounded-full overflow-hidden;
+  }
+
+  .progress-bar-inner {
+    @apply h-full rounded-full transition-all duration-500;
+  }
+
+  .glyph-cell {
+    @apply aspect-square rounded-md flex items-center justify-center
+           text-xl border border-void-border transition-all duration-300
+           relative cursor-default;
+  }
+
+  .stat-box {
+    @apply bg-void-raised border border-void-border rounded-lg
+           py-2 px-1.5 text-center;
+  }
+}

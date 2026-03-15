@@ -1,0 +1,49 @@
+# Dependencies
+node_modules/
+.pnp.*
+.yarn/
+
+# Build outputs
+contracts/out/
+contracts/cache/
+frontend/.next/
+frontend/out/
+backend/dist/
+
+# Environment
+.env
+.env.local
+.env.*.local
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Foundry
+contracts/cache_forge/
+contracts/broadcast/
+contracts/lib/
+
+# Prisma
+backend/prisma/migrations/
+
+# Logs
+*.log
+npm-debug.log*
+
+# Testing
+coverage/
+contracts/lcov.info
+
+# Generated
+backend/src/generated/
+frontend/.next/
+subgraph/generated/
+subgraph/build/

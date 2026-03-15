@@ -1,0 +1,42 @@
+import express from "express";
+import cors from "cors";
+import { WebSocketServer } from "ws";
+import { createServer } from "http";
+import { config, validateConfig } from "./config.js";
+import { wsManager } from "./services/wsManager.js";
+import { startEventListener } from "./services/eventListener.js";
+import { setupRoutes } from "./api/routes.js";
+
+validateConfig();
+
+const app = express();
+app.use(cors());
+app.use(express.json());
+
+// Health check
+app.get("/health", (_req, res) => {
+  res.json({ status: "ok", timestamp: new Date().toISOString() });
+});
+
+// API routes
+setupRoutes(app);
+
+// HTTP server
+const server = createServer(app);
+
+// WebSocket server
+const wss = new WebSocketServer({ server, path: "/ws" });
+wsManager.attach(wss);
+
+// Start
+server.listen(config.PORT, () => {
+  console.log(`[HTTP] Server listening on port ${config.PORT}`);
+  console.log(`[WS]   WebSocket server on ws://localhost:${config.PORT}/ws`);
+
+  // Start blockchain event listener
+  if (config.SUMMONING_ENGINE_ADDRESS) {
+    startEventListener();
+  } else {
+    console.warn("[EVENTS] No contract address configured, event listener disabled");
+  }
+});
