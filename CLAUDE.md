@@ -13,6 +13,25 @@ Before making architectural decisions, always reference:
 - `PRD.md` — Product requirements, feature specs, acceptance criteria, design system
 - `ARCHITECTURE.md` — Technical architecture, contract interfaces, database schemas, API contracts, build order
 
+## Keeping Specs Up To Date
+
+After completing any task that changes game mechanics, balance values,
+architecture decisions, or data models, you must:
+
+1. Identify which of these documents is affected:
+   - `PRD.md` — Product requirements, feature specs, acceptance criteria, design system
+   - `ARCHITECTURE.md` — Technical architecture, contract interfaces, database schemas, API contracts, build order
+
+2. Show me a summary of what changed and why.
+
+3. Ask: "Should I update the spec docs to reflect these changes?"
+
+4. If I say yes, update the relevant sections in the doc and include
+   the doc changes in the same commit as the code changes.
+
+Do this every time — even for small tweaks. The docs are the
+source of truth and must stay in sync with the code.
+
 ## Repository Structure
 
 This is a monorepo with three main packages:
