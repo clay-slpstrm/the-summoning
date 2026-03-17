@@ -261,19 +261,22 @@ contract BondingCurve is Ownable, ReentrancyGuard {
     }
 
     /// @notice Calculate the current price per token based on total supply
-    /// @dev price = BASE_PRICE * (1 + totalSupply / SCALE_FACTOR)
+    /// @dev price = BASE_PRICE * (1 + totalSupplyInTokens / SCALE_FACTOR)
+    ///      Supply is divided by 1e18 to convert from wei to whole-token units,
+    ///      so price doubles when 100M whole tokens have been minted.
     function getCurrentPrice() public view returns (uint256) {
-        uint256 supply = ritualToken.totalSupply();
-        // price = BASE_PRICE + (BASE_PRICE * supply / SCALE_FACTOR)
+        uint256 supply = ritualToken.totalSupply() / 1e18;
+        // price = BASE_PRICE + (BASE_PRICE * supplyInTokens / SCALE_FACTOR)
         return BASE_PRICE + (BASE_PRICE * supply / SCALE_FACTOR);
     }
 
     /// @notice Estimate cost to mint a given number of tokens at current price
     /// @dev Uses average price across the mint range for accuracy
     function getEstimatedCost(uint256 tokenAmount) public view returns (uint256) {
-        uint256 supply = ritualToken.totalSupply();
+        uint256 supply = ritualToken.totalSupply() / 1e18;
+        uint256 tokenAmountWhole = tokenAmount / 1e18;
         uint256 startPrice = BASE_PRICE + (BASE_PRICE * supply / SCALE_FACTOR);
-        uint256 endPrice = BASE_PRICE + (BASE_PRICE * (supply + tokenAmount) / SCALE_FACTOR);
+        uint256 endPrice = BASE_PRICE + (BASE_PRICE * (supply + tokenAmountWhole) / SCALE_FACTOR);
         uint256 avgPrice = (startPrice + endPrice) / 2;
         uint256 grossCost = avgPrice * tokenAmount / 1e18;
         return grossCost * BPS_DENOMINATOR / (BPS_DENOMINATOR - PROTOCOL_FEE_BPS);
@@ -288,9 +291,9 @@ contract BondingCurve is Ownable, ReentrancyGuard {
         uint256 netEth = msg.value - fee;
         protocolFees += fee;
 
-        // Calculate tokens: tokens = netEth / currentPrice (simplified)
-        // For more accuracy, integrate over the curve
-        uint256 supply = ritualToken.totalSupply();
+        // Calculate tokens: tokens = netEth / currentPrice (simplified spot price)
+        // Supply normalized to whole tokens to match SCALE_FACTOR unit (100M tokens)
+        uint256 supply = ritualToken.totalSupply() / 1e18;
         uint256 price = BASE_PRICE + (BASE_PRICE * supply / SCALE_FACTOR);
         uint256 tokensOut = netEth * 1e18 / price;
 

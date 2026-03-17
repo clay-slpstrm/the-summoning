@@ -61,12 +61,9 @@ contract BondingCurveTest is Test {
         assertGt(price, BASE_PRICE);
     }
 
-    function test_GetCurrentPrice_Formula() public {
-        // At supply = SCALE_FACTOR tokens (100M * 1e18), price should be 2x BASE_PRICE
-        uint256 targetSupply = uint256(SCALE_FACTOR) * 1e18;
-        // We need to set the supply artificially; do it by minting directly
-        // Instead, verify the formula via getCurrentPrice() directly at zero supply
-        assertEq(curve.getCurrentPrice(), BASE_PRICE + (BASE_PRICE * 0 / SCALE_FACTOR));
+    function test_GetCurrentPrice_Formula() public view {
+        // At zero supply price == BASE_PRICE
+        assertEq(curve.getCurrentPrice(), BASE_PRICE);
     }
 
     // ── getEstimatedCost ────────────────────────────────────────────────────
@@ -75,9 +72,9 @@ contract BondingCurveTest is Test {
         uint256 tokenAmount = 1000 ether; // 1000 tokens
         uint256 cost = curve.getEstimatedCost(tokenAmount);
 
-        // At zero supply: startPrice = BASE_PRICE, endPrice = BASE_PRICE + BASE_PRICE * 1000 / 100M
+        // Supply is normalized: supply=0 whole tokens, tokenAmountWhole=1000
         uint256 startPrice = BASE_PRICE;
-        uint256 endPrice = BASE_PRICE + (BASE_PRICE * tokenAmount / SCALE_FACTOR);
+        uint256 endPrice = BASE_PRICE + (BASE_PRICE * (tokenAmount / 1e18) / SCALE_FACTOR);
         uint256 avgPrice = (startPrice + endPrice) / 2;
         uint256 grossCost = avgPrice * tokenAmount / 1e18;
         uint256 expectedTotal = grossCost * BPS_DENOMINATOR / (BPS_DENOMINATOR - PROTOCOL_FEE_BPS);

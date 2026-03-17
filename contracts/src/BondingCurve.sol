@@ -7,7 +7,8 @@ import "./interfaces/IRitualToken.sol";
 
 /// @title BondingCurve
 /// @notice Holds the ETH treasury and mints $RITUAL at a linearly increasing price.
-/// @dev Price formula: BASE_PRICE * (1 + totalSupply / SCALE_FACTOR)
+/// @dev Price formula: BASE_PRICE * (1 + totalSupplyInTokens / SCALE_FACTOR)
+///      Supply is normalized from wei to whole tokens before applying SCALE_FACTOR.
 ///      Protocol fee (12%) is deducted from ETH in; remainder determines token output.
 contract BondingCurve is Ownable, ReentrancyGuard {
     IRitualToken public immutable ritualToken;
@@ -36,9 +37,10 @@ contract BondingCurve is Ownable, ReentrancyGuard {
     // ── Views ──────────────────────────────────────────────────────────────
 
     /// @notice Current spot price per token based on total supply.
-    /// @dev price = BASE_PRICE + (BASE_PRICE * supply / SCALE_FACTOR)
+    /// @dev price = BASE_PRICE + (BASE_PRICE * supplyInTokens / SCALE_FACTOR)
+    ///      Supply is divided by 1e18 to convert from wei to whole-token units.
     function getCurrentPrice() public view returns (uint256) {
-        uint256 supply = ritualToken.totalSupply();
+        uint256 supply = ritualToken.totalSupply() / 1e18;
         return BASE_PRICE + (BASE_PRICE * supply / SCALE_FACTOR);
     }
 
@@ -47,9 +49,10 @@ contract BondingCurve is Ownable, ReentrancyGuard {
     /// @param tokenAmount Tokens to mint (18 decimals).
     /// @return Total ETH required including protocol fee.
     function getEstimatedCost(uint256 tokenAmount) public view returns (uint256) {
-        uint256 supply = ritualToken.totalSupply();
+        uint256 supply = ritualToken.totalSupply() / 1e18;
+        uint256 tokenAmountWhole = tokenAmount / 1e18;
         uint256 startPrice = BASE_PRICE + (BASE_PRICE * supply / SCALE_FACTOR);
-        uint256 endPrice = BASE_PRICE + (BASE_PRICE * (supply + tokenAmount) / SCALE_FACTOR);
+        uint256 endPrice = BASE_PRICE + (BASE_PRICE * (supply + tokenAmountWhole) / SCALE_FACTOR);
         uint256 avgPrice = (startPrice + endPrice) / 2;
         uint256 grossCost = avgPrice * tokenAmount / 1e18;
         // Gross up for protocol fee: total * (1 - fee%) = gross → total = gross / (1 - fee%)
@@ -68,7 +71,7 @@ contract BondingCurve is Ownable, ReentrancyGuard {
         protocolFees += fee;
 
         // Spot-price approximation: tokens = netEth / currentPrice
-        uint256 supply = ritualToken.totalSupply();
+        uint256 supply = ritualToken.totalSupply() / 1e18;
         uint256 price = BASE_PRICE + (BASE_PRICE * supply / SCALE_FACTOR);
         uint256 tokensOut = netEth * 1e18 / price;
 
