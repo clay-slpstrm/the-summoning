@@ -1,7 +1,3 @@
-/**
- * Hook for $RITUAL token balance and basic operations.
- */
-
 "use client";
 
 import { useReadContract, useAccount } from "wagmi";
@@ -11,7 +7,7 @@ import { formatUnits } from "viem";
 export function useRitualBalance() {
   const { address } = useAccount();
 
-  const { data: rawBalance, ...rest } = useReadContract({
+  const { data: balance, ...rest } = useReadContract({
     address: RITUAL_TOKEN_ADDRESS,
     abi: RITUAL_TOKEN_ABI,
     functionName: "balanceOf",
@@ -19,13 +15,13 @@ export function useRitualBalance() {
     query: { enabled: !!address, refetchInterval: 10_000 },
   });
 
-  const balance = rawBalance ? BigInt(rawBalance as string) : 0n;
-  const formatted = formatUnits(balance, 18);
+  const raw = (balance as bigint | undefined) ?? 0n;
+  const formatted = formatUnits(raw, 18);
 
   return {
-    balance,
+    balance: raw,
     formatted,
-    display: Number(formatted).toLocaleString(),
+    display: Number(formatted).toLocaleString(undefined, { maximumFractionDigits: 2 }),
     ...rest,
   };
 }

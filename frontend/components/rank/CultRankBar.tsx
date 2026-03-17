@@ -14,7 +14,7 @@ export default function CultRankBar() {
   const glyphCount = useGlyphStore((s) => s.glyphs.length);
 
   // Calculate current rank
-  let currentRank = CULT_RANKS[0];
+  let currentRank: (typeof CULT_RANKS)[number] = CULT_RANKS[0];
   for (const r of CULT_RANKS) {
     if (glyphCount >= r.minGlyphs) currentRank = r;
   }

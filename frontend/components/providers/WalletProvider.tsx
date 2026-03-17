@@ -1,33 +1,29 @@
 "use client";
 
-import { WagmiProvider, createConfig, http } from "wagmi";
-import { mainnet, sepolia } from "wagmi/chains";
+import { getDefaultConfig, RainbowKitProvider } from "@rainbow-me/rainbowkit";
+import { WagmiProvider, http } from "wagmi";
+import { sepolia } from "wagmi/chains";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { type ReactNode } from "react";
+import "@rainbow-me/rainbowkit/styles.css";
 
-/**
- * Wallet provider configuration.
- *
- * For production: switch defaultChain to mainnet.
- * RainbowKit can be added here for a polished connect modal.
- * See PRD.md F1 for wallet connection requirements.
- */
-
-const queryClient = new QueryClient();
-
-const config = createConfig({
-  chains: [sepolia, mainnet],
+const config = getDefaultConfig({
+  appName: "The Summoning",
+  projectId: process.env.NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID || "placeholder",
+  chains: [sepolia],
   transports: {
     [sepolia.id]: http(process.env.NEXT_PUBLIC_RPC_URL),
-    [mainnet.id]: http(process.env.NEXT_PUBLIC_RPC_URL),
   },
+  ssr: true,
 });
+
+const queryClient = new QueryClient();
 
 export function WalletProvider({ children }: { children: ReactNode }) {
   return (
     <WagmiProvider config={config}>
       <QueryClientProvider client={queryClient}>
-        {children}
+        <RainbowKitProvider>{children}</RainbowKitProvider>
       </QueryClientProvider>
     </WagmiProvider>
   );
