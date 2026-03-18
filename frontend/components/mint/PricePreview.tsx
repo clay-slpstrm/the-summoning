@@ -8,8 +8,7 @@ type Props = {
 };
 
 export function PricePreview({ ethAmount }: Props) {
-  const { data: rawPrice } = useCurrentPrice();
-  const currentPrice = rawPrice as bigint | undefined;
+  const { data: currentPrice } = useCurrentPrice();
 
   const estimatedTokens = (() => {
     if (!currentPrice || !ethAmount || Number(ethAmount) <= 0) return null;

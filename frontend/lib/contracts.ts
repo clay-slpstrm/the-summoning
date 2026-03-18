@@ -24,39 +24,35 @@ export const ELDER_ARTIFACTS_ADDRESS =
   (process.env.NEXT_PUBLIC_ELDER_ARTIFACTS_ADDRESS || "") as `0x${string}`;
 
 // ── ABIs ──
-// TODO: Import from Foundry build output after contracts are compiled.
-// Example:
-// import RitualTokenABI from '../../contracts/out/RitualToken.sol/RitualToken.json';
-// export const RITUAL_TOKEN_ABI = RitualTokenABI.abi;
+// Using parseAbi from viem so wagmi v2 hooks receive properly typed ABI objects.
 
-// Minimal ABI stubs for initial development — replace with full ABIs after forge build.
+import { parseAbi } from "viem";
 
-export const RITUAL_TOKEN_ABI = [
+export const RITUAL_TOKEN_ABI = parseAbi([
   "function balanceOf(address) view returns (uint256)",
   "function approve(address spender, uint256 amount) returns (bool)",
   "function allowance(address owner, address spender) view returns (uint256)",
   "function totalSupply() view returns (uint256)",
-] as const;
+]);
 
-export const BONDING_CURVE_ABI = [
+export const BONDING_CURVE_ABI = parseAbi([
   "function mint(uint256 minTokens) payable",
   "function getCurrentPrice() view returns (uint256)",
   "function getEstimatedCost(uint256 tokenAmount) view returns (uint256)",
-] as const;
+]);
 
-export const SUMMONING_ENGINE_ABI = [
+export const SUMMONING_ENGINE_ABI = parseAbi([
   "function commitRitual(uint256 amount)",
   "function claimReward(uint256 epochId)",
   "function currentEpochId() view returns (uint256)",
-  "function epochs(uint256) view returns (uint256 oldOneId, uint256 threshold, uint256 totalCommitted, uint256 gatheringStart, uint256 ritualStart, uint256 ritualEnd, bool successful, bool resolved, uint256 participantCount)",
   "function contributions(uint256 epochId, address wallet) view returns (uint256)",
   "function getCurrentPhase() view returns (uint8)",
   "function lastSacrificeTime(address) view returns (uint256)",
   "event RitualSacrifice(uint256 indexed epochId, address indexed wallet, uint256 amount, uint256 totalCommitted)",
-] as const;
+]);
 
-export const ELDER_ARTIFACTS_ABI = [
+export const ELDER_ARTIFACTS_ABI = parseAbi([
   "function balanceOf(address account, uint256 id) view returns (uint256)",
   "function balanceOfBatch(address[] accounts, uint256[] ids) view returns (uint256[])",
   "function uri(uint256 tokenId) view returns (string)",
-] as const;
+]);

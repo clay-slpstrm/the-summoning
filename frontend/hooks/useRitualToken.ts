@@ -15,7 +15,7 @@ export function useRitualBalance() {
     query: { enabled: !!address, refetchInterval: 10_000 },
   });
 
-  const raw = (balance as bigint | undefined) ?? 0n;
+  const raw = balance ?? 0n;
   const formatted = formatUnits(raw, 18);
 
   return {
