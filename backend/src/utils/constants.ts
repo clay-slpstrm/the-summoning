@@ -39,6 +39,14 @@ export const CULT_RANKS = [
   { name: "Herald of the Breach", minGlyphs: 40, index: 5 },
 ] as const;
 
+export const OLD_ONES: Record<number, { name: string; description: string }> = {
+  1: { name: "Cthulhu",        description: "the Dreaming One" },
+  2: { name: "Nyarlathotep",   description: "the Crawling Chaos" },
+  3: { name: "Azathoth",       description: "the Blind Idiot God" },
+  4: { name: "Shub-Niggurath", description: "the Black Goat" },
+  5: { name: "Yog-Sothoth",    description: "the Gate and the Key" },
+};
+
 export const TIER_IDS = {
   SHATTERED_RITUAL: 0,
   HARBINGER: 1,

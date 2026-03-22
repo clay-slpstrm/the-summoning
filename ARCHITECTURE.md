@@ -389,26 +389,35 @@ contract SummoningEngine is Ownable, ReentrancyGuard {
     event RewardClaimed(uint256 indexed epochId, address indexed wallet, uint256 tierId);
 
     // ── Errors ──
-    error InvalidPhase();
-    error BelowMinimum();
-    error CooldownActive();
-    error InsufficientBalance();
-    error AlreadyClaimed();
-    error EpochNotResolved();
-    error TransferFailed();
+    error SummoningEngine__InvalidPhase();
+    error SummoningEngine__BelowMinimum();
+    error SummoningEngine__CooldownActive();
+    error SummoningEngine__InsufficientBalance();
+    error SummoningEngine__AlreadyClaimed();
+    error SummoningEngine__EpochNotResolved();
+    error SummoningEngine__ZeroAddress();
+    error SummoningEngine__ZeroThreshold();
+    error SummoningEngine__NoActiveEpoch();
 
     constructor(
         address _token,
         address _artifacts,
         address _owner
     ) Ownable(_owner) {
+        if (_token == address(0) || _artifacts == address(0)) revert SummoningEngine__ZeroAddress();
         ritualToken = IRitualToken(_token);
         artifacts = IElderArtifacts(_artifacts);
     }
 
     // ── Epoch Management (Owner) ──
 
+    /// @notice Start a new epoch. Prior epoch must be resolved (or this is the first epoch).
     function startEpoch(uint256 oldOneId, uint256 threshold) external onlyOwner {
+        if (threshold == 0) revert SummoningEngine__ZeroThreshold();
+        if (currentEpochId > 0 && !epochs[currentEpochId].resolved) {
+            revert SummoningEngine__InvalidPhase();
+        }
+
         currentEpochId++;
         uint256 id = currentEpochId;
 
@@ -431,24 +440,27 @@ contract SummoningEngine is Ownable, ReentrancyGuard {
 
     /// @notice Commit $RITUAL to the current epoch's summoning ritual.
     ///         Tokens are burned immediately. Emits event consumed by Glyph Engine.
+    ///         Caller must have approved this contract for at least `amount` $RITUAL.
     function commitRitual(uint256 amount) external nonReentrant {
+        if (currentEpochId == 0) revert SummoningEngine__NoActiveEpoch();
+
         uint256 id = currentEpochId;
         Epoch storage epoch = epochs[id];
 
         // Must be in Ritual phase
         if (block.timestamp < epoch.ritualStart || block.timestamp >= epoch.ritualEnd) {
-            revert InvalidPhase();
+            revert SummoningEngine__InvalidPhase();
         }
-        if (amount < MIN_SACRIFICE) revert BelowMinimum();
+        if (amount < MIN_SACRIFICE) revert SummoningEngine__BelowMinimum();
         if (block.timestamp < lastSacrificeTime[msg.sender] + SACRIFICE_COOLDOWN) {
-            revert CooldownActive();
+            revert SummoningEngine__CooldownActive();
         }
-        if (ritualToken.balanceOf(msg.sender) < amount) revert InsufficientBalance();
+        if (ritualToken.balanceOf(msg.sender) < amount) revert SummoningEngine__InsufficientBalance();
 
-        // Record cooldown
+        // Record cooldown before external call (checks-effects-interactions)
         lastSacrificeTime[msg.sender] = block.timestamp;
 
-        // Track contribution
+        // Track contribution (first-time contributors added to list)
         if (contributions[id][msg.sender] == 0) {
             _contributors[id].push(msg.sender);
             epoch.participantCount++;
@@ -456,20 +468,23 @@ contract SummoningEngine is Ownable, ReentrancyGuard {
         contributions[id][msg.sender] += amount;
         epoch.totalCommitted += amount;
 
-        // Burn tokens
+        // Burn tokens — caller must have approved this contract
         ritualToken.burnFrom(msg.sender, amount);
 
         emit RitualSacrifice(id, msg.sender, amount, epoch.totalCommitted);
     }
 
     /// @notice Resolve the current epoch after ritual phase ends.
-    ///         Called by Chainlink Automation or manually by owner.
+    ///         Permissionless — anyone can call once ritualEnd has passed.
+    ///         In production, Chainlink Automation calls this automatically.
     function resolveEpoch() external {
+        if (currentEpochId == 0) revert SummoningEngine__NoActiveEpoch();
+
         uint256 id = currentEpochId;
         Epoch storage epoch = epochs[id];
 
-        if (block.timestamp < epoch.ritualEnd) revert InvalidPhase();
-        if (epoch.resolved) revert InvalidPhase();
+        if (block.timestamp < epoch.ritualEnd) revert SummoningEngine__InvalidPhase();
+        if (epoch.resolved) revert SummoningEngine__InvalidPhase();
 
         epoch.resolved = true;
         epoch.successful = epoch.totalCommitted >= epoch.threshold;
@@ -480,22 +495,20 @@ contract SummoningEngine is Ownable, ReentrancyGuard {
     // ── Reward Claims ──
 
     /// @notice Claim ERC-1155 reward artifact after epoch resolution.
+    ///         Contribution is zeroed on claim (prevents double-claim, CEI pattern).
     function claimReward(uint256 epochId) external nonReentrant {
         Epoch storage epoch = epochs[epochId];
-        if (!epoch.resolved) revert EpochNotResolved();
-        if (contributions[epochId][msg.sender] == 0) revert InsufficientBalance();
+        if (!epoch.resolved) revert SummoningEngine__EpochNotResolved();
 
         uint256 contribution = contributions[epochId][msg.sender];
+        if (contribution == 0) revert SummoningEngine__AlreadyClaimed();
 
-        // Determine tier based on contribution percentile
+        // Zero out before minting (checks-effects-interactions)
+        contributions[epochId][msg.sender] = 0;
+
         uint256 tierId = _calculateTier(epochId, contribution, epoch.successful);
-
-        // Mint artifact: tokenId = epochId * 1000 + tierId
         uint256 tokenId = epochId * 1000 + tierId;
         artifacts.mint(msg.sender, tokenId, 1, "");
-
-        // Prevent double claim
-        contributions[epochId][msg.sender] = 0;
 
         emit RewardClaimed(epochId, msg.sender, tierId);
     }
@@ -511,13 +524,13 @@ contract SummoningEngine is Ownable, ReentrancyGuard {
 
         // NOTE: For production, percentile calculation requires sorted
         // contributions or off-chain computation with merkle proof verification.
-        // Simplified version below uses threshold-based tiers.
+        // Simplified version below uses average-multiple thresholds.
         Epoch storage epoch = epochs[epochId];
         uint256 avgContribution = epoch.totalCommitted / epoch.participantCount;
 
-        if (contribution >= avgContribution * 10) return 1;  // Harbinger (top ~1%)
-        if (contribution >= avgContribution * 3) return 2;   // Acolyte (top ~10%)
-        return 3;                                            // Cultist (everyone else)
+        if (contribution >= avgContribution * 10) return 1; // Harbinger (~top 1%)
+        if (contribution >= avgContribution * 3)  return 2; // Acolyte   (~top 10%)
+        return 3;                                           // Cultist   (everyone else)
     }
 
     // ── View Functions ──
@@ -527,16 +540,33 @@ contract SummoningEngine is Ownable, ReentrancyGuard {
     }
 
     function getCurrentPhase() external view returns (EpochPhase) {
+        if (currentEpochId == 0) return EpochPhase.Inactive;
         Epoch storage epoch = epochs[currentEpochId];
-        if (epoch.gatheringStart == 0) return EpochPhase.Inactive;
         if (epoch.resolved) return EpochPhase.Resolved;
         if (block.timestamp < epoch.ritualStart) return EpochPhase.Gathering;
         if (block.timestamp < epoch.ritualEnd) return EpochPhase.Ritual;
-        return EpochPhase.Resolved; // past end, awaiting resolution
+        return EpochPhase.Resolved; // past ritualEnd, awaiting resolveEpoch() call
     }
 
     function getContribution(uint256 epochId, address wallet) external view returns (uint256) {
         return contributions[epochId][wallet];
+    }
+
+    /// @notice All contributor addresses for a given epoch.
+    function getContributors(uint256 epochId) external view returns (address[] memory) {
+        return _contributors[epochId];
+    }
+
+    /// @notice Compute the suggested threshold for the next epoch based on current outcome.
+    ///         Returns 0 if no epoch exists or the current epoch is unresolved.
+    function nextThreshold() external view returns (uint256) {
+        if (currentEpochId == 0 || !epochs[currentEpochId].resolved) return 0;
+        Epoch storage epoch = epochs[currentEpochId];
+        if (epoch.successful) {
+            return (epoch.threshold * ESCALATION_BPS) / 10_000;
+        } else {
+            return (epoch.threshold * (10_000 - FAILURE_REDUCTION_BPS)) / 10_000;
+        }
     }
 }
 ```
@@ -547,6 +577,11 @@ contract SummoningEngine is Ownable, ReentrancyGuard {
 - 30-second cooldown per wallet prevents glyph farming via rapid small burns.
 - Tier calculation is simplified for V1. Production should use merkle proofs from off-chain percentile calculation.
 - `resolveEpoch` is permissionless — anyone can call it after the ritual window closes. Chainlink Automation calls it automatically.
+- All custom errors are prefixed with `SummoningEngine__` for clarity in multi-contract traces.
+- `startEpoch` guards against starting a new epoch before the prior one is resolved.
+- `claimReward` zeros contribution before minting (checks-effects-interactions) and uses `AlreadyClaimed` for zero-contribution rejections.
+- `getContributors(epochId)` returns the full contributor address list for off-chain use.
+- `nextThreshold()` surfaces the escalation/reduction math so the owner doesn't need to compute it manually.
 
 ---
 
@@ -858,7 +893,41 @@ export async function processRitualSacrifice(event: RitualSacrificeEvent) {
 
 ---
 
-### 4.3 Event Listener
+### 4.3 Epoch Sync Service
+
+Keeps the `EpochCache` database table in sync with on-chain state. Without this, `/api/epochs/current` would always return null because nothing writes to the table.
+
+```typescript
+// backend/src/services/epochSync.ts
+
+import { createPublicClient, http, parseAbiItem } from 'viem';
+import { sepolia } from 'viem/chains';
+import { PrismaClient } from '@prisma/client';
+import { config } from '../config';
+
+const prisma = new PrismaClient();
+const client = createPublicClient({ chain: sepolia, transport: http(config.RPC_URL) });
+
+async function syncCurrentEpoch() {
+  // Read currentEpochId + getEpoch() from chain, upsert EpochCache
+}
+
+export function startEpochSync(intervalMs = 60_000): void {
+  syncCurrentEpoch();                                          // immediate sync on startup
+  client.watchEvent({ event: parseAbiItem('event EpochStarted(...)'), onLogs: ... });
+  client.watchEvent({ event: parseAbiItem('event EpochResolved(...)'), onLogs: ... });
+  setInterval(syncCurrentEpoch, intervalMs);                   // poll every 60s as backstop
+}
+```
+
+**Key decisions**:
+- Runs on startup to hydrate the DB from current chain state before the first API request.
+- `watchEvent` handles real-time updates; the 60s poll is a backstop for any missed events.
+- Called alongside `startEventListener()` in `index.ts`.
+
+---
+
+### 4.4 Event Listener
 
 Listens for on-chain `RitualSacrifice` events and feeds them to the Glyph Engine.
 
@@ -910,7 +979,7 @@ export function startEventListener() {
 
 ---
 
-### 4.4 WebSocket Manager
+### 4.5 WebSocket Manager
 
 Manages per-wallet WebSocket connections for real-time glyph delivery.
 
@@ -974,7 +1043,7 @@ export const wsManager = new WSManager();
 
 ---
 
-### 4.5 REST API Endpoints
+### 4.6 REST API Endpoints
 
 ```
 GET  /api/metadata/:tokenId        → ERC-1155 JSON metadata
@@ -987,26 +1056,29 @@ GET  /api/leaderboard/glyphs       → Top glyph collectors
 GET  /health                       → Health check
 ```
 
-**Metadata endpoint response format (ERC-1155 standard)**:
+**Metadata endpoint** (`/api/metadata/:tokenId`):
+- Token ID decoded as `epochId * 1000 + tierId`
+- Old One name resolved dynamically from `EpochCache.oldOneId` → `OLD_ONES` constant
+  (defined in `backend/src/utils/constants.ts`), with fallback to Cthulhu
+- Response format (ERC-1155 standard):
 
 ```json
 {
   "name": "Fragment of Cthulhu — Harbinger",
-  "description": "A shard of the Dreaming One, pulled from beyond the veil by a Harbinger of Epoch I.",
+  "description": "A shard of the Dreaming One, pulled from beyond the veil during Epoch 1.",
   "image": "https://api.thesummoning.xyz/images/1001.png",
   "attributes": [
     { "trait_type": "Epoch", "value": 1 },
     { "trait_type": "Old One", "value": "Cthulhu" },
     { "trait_type": "Tier", "value": "Harbinger" },
-    { "trait_type": "Tier ID", "value": 1 },
-    { "trait_type": "Total Minted", "value": 23 }
+    { "trait_type": "Tier ID", "value": 1 }
   ]
 }
 ```
 
 ---
 
-### 4.6 Cult Rank Calculation
+### 4.7 Cult Rank Calculation
 
 ```typescript
 // backend/src/services/leaderboard.ts
@@ -1093,6 +1165,25 @@ export async function updateCultRank(wallet: string) {
 - Hover/tap shows tooltip with tier name + lore
 - Newest glyph animates in (scale from 0.8 to 1, opacity fade)
 
+#### EpochStatus.tsx
+- Reads epoch data directly from SummoningEngine contract via `useEpochProgress` hook
+- Shows: Old One name/subtitle, phase badge (color-coded), live countdown
+- Includes `ProgressBar.tsx` — purple→red gradient bar with `COLLECTIVE PROGRESS` label
+- Includes `Countdown.tsx` — updates every second, formats as `Xd Xh Xm` or `HH:MM:SS`
+- Phase-dependent display: Gathering shows "Ritual begins in", Ritual shows "Ritual ends in", Resolved shows success/failure badge
+- Shows portal stage name and participant count
+
+#### CultRankBar.tsx
+- Reads glyph count from `glyphStore`, calculates current/next rank
+- Segmented progress bar — one segment per rank tier, filled proportionally
+- Color-coded rank name, "X glyphs to [Next Rank]" label
+
+#### Leaderboard.tsx
+- Fetches from `/api/leaderboard` on mount
+- Shows position, truncated wallet address, cult rank name (color-coded), glyph count
+- Highlights the connected wallet's row with a subtle border + background tint
+- Empty state: "No sacrifices yet. Be the first."
+
 ### 5.3 Wallet Integration Flow
 
 ```
@@ -1105,52 +1196,33 @@ export async function updateCultRank(wallet: string) {
 7. On tx confirmed: WebSocket delivers glyph → trigger GlyphReveal overlay
 ```
 
-### 5.4 WebSocket Client
+### 5.4 WebSocket Client + Glyph Hydration
 
-```typescript
-// frontend/hooks/useGlyphs.ts
+The real-time glyph pipeline is split into two pieces:
 
-import { useEffect } from 'react';
-import { useAccount } from 'wagmi';
-import { useGlyphStore } from '../stores/glyphStore';
+**`WebSocketProvider.tsx`** (context provider, mounted in `layout.tsx`):
+- Manages the WS connection lifecycle per wallet address.
+- On `onopen`: sends `{ type: 'auth', wallet }` and immediately fetches `/api/glyphs/:wallet` via REST to catch any glyphs that arrived while disconnected.
+- On `glyph_reveal` message: calls `setRevealGlyph(msg.data)` to trigger the reveal modal.
+- Auto-reconnects after 3 seconds on close.
+- Closes connection on wallet disconnect.
 
-const WS_URL = process.env.NEXT_PUBLIC_WS_URL || 'wss://api.thesummoning.xyz/ws';
+**`useGlyphs.ts`** (hook, called in `page.tsx`):
+- Watches the connected wallet address; fetches `/api/glyphs/:wallet` on connect/change.
+- Calls `setGlyphs(data.glyphs)` to populate the store for initial page load.
+- Returns `{ glyphs, isLoading, error }` for UI feedback.
 
-export function useGlyphWebSocket() {
-  const { address } = useAccount();
-  const addGlyph = useGlyphStore((s) => s.addGlyph);
-  const setRevealGlyph = useGlyphStore((s) => s.setRevealGlyph);
-
-  useEffect(() => {
-    if (!address) return;
-
-    const ws = new WebSocket(WS_URL);
-
-    ws.onopen = () => {
-      ws.send(JSON.stringify({ type: 'auth', wallet: address }));
-    };
-
-    ws.onmessage = (event) => {
-      const msg = JSON.parse(event.data);
-      if (msg.type === 'glyph_reveal') {
-        // Trigger the reveal animation
-        setRevealGlyph(msg.data);
-      }
-      if (msg.type === 'epoch_update') {
-        // Update epoch progress in real-time
-        // Handled by epoch store
-      }
-    };
-
-    ws.onclose = () => {
-      // Reconnect after 3 seconds
-      setTimeout(() => {}, 3000);
-    };
-
-    return () => ws.close();
-  }, [address]);
-}
 ```
+Reconnect flow:
+  WS disconnects → 3s delay → reconnect → onopen:
+    1. Send auth
+    2. Fetch REST /api/glyphs/:wallet → setGlyphs (catches any missed glyphs)
+    3. Backend resumes sending new glyph_reveal messages
+```
+
+**Environment variables**:
+- `NEXT_PUBLIC_WS_URL` — WebSocket URL (default: `ws://localhost:3001/ws`)
+- `NEXT_PUBLIC_API_URL` — REST API base URL (default: `http://localhost:3001`)
 
 ### 5.5 Contract Hook Pattern
 
@@ -1181,6 +1253,19 @@ export function useCommitRitual() {
   };
 }
 ```
+
+### 5.6 Epoch Progress Hook
+
+`useEpochProgress` reads epoch state **directly from the SummoningEngine contract** via
+wagmi's `useReadContract`, not from the backend REST API. This is a deliberate design choice:
+
+- **Why not REST?** The backend's `/api/epochs/current` is useful for the metadata API and
+  external consumers, but the frontend benefits from reading the authoritative on-chain state
+  directly. This eliminates a dependency on the backend for the core gameplay UI.
+- **Polling**: `currentEpochId` polls every 30s, `getEpoch` and `getCurrentPhase` poll every 15s.
+- **Chain pinning**: All reads use `chainId: sepolia.id` so they work even before wallet connect.
+- **Returns**: `{ epoch: EpochData | null, isLoading, error }` — EpochData includes progress
+  (0-100), timing for countdowns, Old One identity, and current portal stage.
 
 ---
 
@@ -1391,43 +1476,61 @@ AUTOMATION_REGISTRY=0x...
 
 Follow this sequence. Each step should be fully tested before proceeding.
 
-### Week 1: Foundation
+### Week 1: Foundation ✅ COMPLETE
 
 ```
-Step 1:  Initialize Foundry project (forge init)
-Step 2:  Install OpenZeppelin (forge install OpenZeppelin/openzeppelin-contracts)
-Step 3:  Implement RitualToken.sol + tests
-Step 4:  Implement BondingCurve.sol + tests (heavy fuzz testing on math)
-Step 5:  Write Deploy.s.sol, deploy to Anvil, verify end-to-end mint
-Step 6:  Deploy to Sepolia testnet
-Step 7:  Initialize Next.js frontend with wagmi
-Step 8:  Build MintInterface component — connect wallet, deposit ETH, receive $RITUAL
-Step 9:  Verify: User can connect wallet, mint $RITUAL on Sepolia, see balance
+Step 1:  Initialize Foundry project (forge init)                          ✅
+Step 2:  Install OpenZeppelin (forge install OpenZeppelin/openzeppelin-contracts) ✅
+Step 3:  Implement RitualToken.sol + tests                                ✅
+Step 4:  Implement BondingCurve.sol + tests (heavy fuzz testing on math)  ✅
+Step 5:  Write Deploy.s.sol, deploy to Anvil, verify end-to-end mint      ✅
+Step 6:  Deploy to Sepolia testnet                                        ✅
+Step 7:  Initialize Next.js frontend with wagmi                           ✅
+Step 8:  Build MintInterface component — connect wallet, deposit ETH, receive $RITUAL ✅
+Step 9:  Verify: User can connect wallet, mint $RITUAL on Sepolia, see balance ✅
 ```
 
-### Week 2: Core Game + Glyphs
+### Week 2: Core Game + Glyphs ✅ COMPLETE
 
 ```
-Step 10: Implement SummoningEngine.sol + tests (epoch lifecycle)
-Step 11: Implement ElderArtifacts.sol + tests
-Step 12: Deploy all 4 contracts to Sepolia, run wiring script
-Step 13: Initialize backend (Express + Prisma + PostgreSQL)
-Step 14: Implement glyphRoll.ts + determinism tests
-Step 15: Implement glyphEngine.ts + eventListener.ts
-Step 16: Implement wsManager.ts
-Step 17: Build SacrificePanel + GlyphReveal components
-Step 18: Build GlyphCollection + CultRankBar components
-Step 19: Wire frontend WebSocket to backend
-Step 20: Verify: User sacrifices $RITUAL → glyph reveal animation → collection updates
+Step 10: Implement SummoningEngine.sol + 57 tests (full epoch lifecycle)  ✅
+         Extras vs spec: getContributors(), nextThreshold(), ZeroAddress/ZeroThreshold
+         errors, prior-epoch guard on startEpoch. All pass forge test.
+Step 11: Implement ElderArtifacts.sol + 36 tests                          ✅
+         Includes: name/symbol, totalMinted mapping, uri() override, setBaseURI().
+Step 12: Deploy SummoningEngine + ElderArtifacts to Sepolia (targeted     ✅
+         redeploy preserving existing RitualToken + BondingCurve balances)
+         via script/DeployWeek2.s.sol. Verified on Sepolia Etherscan.
+Step 13: Backend: glyphRoll.ts + glyphEngine.ts + eventListener.ts        ✅
+         + wsManager.ts + epochSync.ts + REST routes + Prisma schema.
+         epochSync.ts hydrates EpochCache on startup and watches
+         EpochStarted/EpochResolved events to keep /api/epochs/current live.
+Step 14: Frontend glyph UI: GlyphReveal.tsx + GlyphCollection.tsx wired   ✅
+         into page.tsx. useGlyphs.ts handles REST hydration on wallet
+         connect. WebSocketProvider handles WS lifecycle + reconnect
+         + REST fetch on reconnect. Mounts in layout.tsx.
+Step 15: Verify: sacrifice flow → glyph_reveal WS message → GlyphReveal   ✅
+         animation → dismiss → GlyphCollection grid updates.
 ```
 
-### Week 3: Polish & Integration
+### Week 3: Polish & Integration (Steps 21–24 ✅ COMPLETE)
 
 ```
-Step 21: Build Portal.tsx (6-stage SVG visualization)
-Step 22: Build EpochStatus + Countdown components
-Step 23: Implement metadata API endpoint for ERC-1155
-Step 24: Build leaderboard API + frontend component
+Step 21: Portal.tsx — 6-stage SVG visualization. PortalStages.ts config   ✅
+         with getStageForProgress(). SVG uses viewBox 220x220,
+         width/height="100%" with explicit container sizing.
+Step 22: EpochStatus.tsx + Countdown.tsx + ProgressBar.tsx.               ✅
+         useEpochProgress hook reads directly from SummoningEngine
+         contract (not REST API) with chainId pinned to Sepolia.
+         Polls every 15s. Shows Old One name, phase badge, live
+         countdown, purple→red progress bar, participant count.
+Step 23: Metadata API — /api/metadata/:tokenId now dynamically           ✅
+         resolves Old One name from EpochCache.oldOneId → OLD_ONES
+         constant. Added OLD_ONES to backend/src/utils/constants.ts.
+Step 24: Leaderboard.tsx — fetches /api/leaderboard, shows rank          ✅
+         position, wallet, cult rank (color-coded), glyph count.
+         Highlights connected wallet row. CultRankBar wired into
+         page.tsx below GlyphCollection.
 Step 25: Mobile responsive pass on all components
 Step 26: Implement Chainlink VRF integration in SummoningEngine
 Step 27: Implement Chainlink Automation for auto-resolution

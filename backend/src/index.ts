@@ -5,6 +5,7 @@ import { createServer } from "http";
 import { config, validateConfig } from "./config.js";
 import { wsManager } from "./services/wsManager.js";
 import { startEventListener } from "./services/eventListener.js";
+import { startEpochSync } from "./services/epochSync.js";
 import { setupRoutes } from "./api/routes.js";
 
 validateConfig();
@@ -33,10 +34,10 @@ server.listen(config.PORT, () => {
   console.log(`[HTTP] Server listening on port ${config.PORT}`);
   console.log(`[WS]   WebSocket server on ws://localhost:${config.PORT}/ws`);
 
-  // Start blockchain event listener
   if (config.SUMMONING_ENGINE_ADDRESS) {
     startEventListener();
+    startEpochSync();
   } else {
-    console.warn("[EVENTS] No contract address configured, event listener disabled");
+    console.warn("[EVENTS] No contract address configured, listeners disabled");
   }
 });

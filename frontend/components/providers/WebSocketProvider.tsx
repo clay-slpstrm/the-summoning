@@ -8,7 +8,9 @@ import {
   type ReactNode,
 } from "react";
 import { useAccount } from "wagmi";
-import { useGlyphStore } from "@/stores/glyphStore";
+import { useGlyphStore, type GlyphData } from "@/stores/glyphStore";
+
+const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3001";
 
 /**
  * WebSocket provider for real-time glyph delivery.
@@ -36,6 +38,7 @@ export function WebSocketProvider({ children }: { children: ReactNode }) {
   const { address } = useAccount();
   const wsRef = useRef<WebSocket | null>(null);
   const setRevealGlyph = useGlyphStore((s) => s.setRevealGlyph);
+  const setGlyphs = useGlyphStore((s) => s.setGlyphs);
 
   useEffect(() => {
     if (!address) {
@@ -52,6 +55,11 @@ export function WebSocketProvider({ children }: { children: ReactNode }) {
       ws.onopen = () => {
         console.log("[WS] Connected");
         ws.send(JSON.stringify({ type: "auth", wallet: address }));
+        // Fetch REST on (re)connect to catch any glyphs missed while disconnected
+        fetch(`${API_URL}/api/glyphs/${address!.toLowerCase()}`)
+          .then((r) => r.json())
+          .then((data: { glyphs: GlyphData[] }) => setGlyphs(data.glyphs))
+          .catch(() => { /* non-fatal */ });
       };
 
       ws.onmessage = (event) => {
@@ -91,7 +99,7 @@ export function WebSocketProvider({ children }: { children: ReactNode }) {
       wsRef.current?.close();
       wsRef.current = null;
     };
-  }, [address, setRevealGlyph]);
+  }, [address, setRevealGlyph, setGlyphs]);
 
   return (
     <WSContext.Provider value={{ isConnected: !!wsRef.current }}>

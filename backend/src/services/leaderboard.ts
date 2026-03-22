@@ -16,7 +16,7 @@ export type CultRankInfo = {
 };
 
 export function calculateRank(glyphCount: number): CultRankInfo {
-  let rank = CULT_RANKS[0];
+  let rank: typeof CULT_RANKS[number] = CULT_RANKS[0];
   for (const r of CULT_RANKS) {
     if (glyphCount >= r.minGlyphs) rank = r;
   }

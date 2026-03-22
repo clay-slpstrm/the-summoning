@@ -1,6 +1,6 @@
 import type { Express } from "express";
 import { PrismaClient } from "@prisma/client";
-import { CULT_RANKS } from "../utils/constants.js";
+import { CULT_RANKS, OLD_ONES } from "../utils/constants.js";
 
 const prisma = new PrismaClient();
 
@@ -52,11 +52,20 @@ export function setupRoutes(app: Express): void {
   // ── Leaderboard ──
 
   app.get("/api/leaderboard", async (req, res) => {
-    const topCollectors = await prisma.cultRank.findMany({
+    const leaderboard = await prisma.cultRank.findMany({
       orderBy: { glyphCount: "desc" },
       take: 50,
     });
-    res.json({ leaderboard: topCollectors });
+    res.json({ leaderboard });
+  });
+
+  // Top glyph collectors with tier breakdown
+  app.get("/api/leaderboard/glyphs", async (req, res) => {
+    const topWallets = await prisma.cultRank.findMany({
+      orderBy: { glyphCount: "desc" },
+      take: 50,
+    });
+    res.json({ leaderboard: topWallets });
   });
 
   // ── ERC-1155 Metadata ──
@@ -75,16 +84,17 @@ export function setupRoutes(app: Express): void {
 
     const tierName = tierNames[tierId] || "Unknown";
 
-    // TODO: Map epochId to Old One name from epoch config
-    const oldOneName = "Cthulhu";
+    // Look up Old One from EpochCache, fall back to unknown
+    const epochRecord = await prisma.epochCache.findUnique({ where: { epochId } });
+    const oldOne = epochRecord ? (OLD_ONES[epochRecord.oldOneId] ?? OLD_ONES[1]) : OLD_ONES[1];
 
     res.json({
-      name: `Fragment of ${oldOneName} — ${tierName}`,
-      description: `A shard of the ${oldOneName}, pulled from beyond the veil during Epoch ${epochId}.`,
+      name: `Fragment of ${oldOne.name} — ${tierName}`,
+      description: `A shard of ${oldOne.description}, pulled from beyond the veil during Epoch ${epochId}.`,
       image: `https://api.thesummoning.xyz/images/${tokenId}.png`,
       attributes: [
         { trait_type: "Epoch", value: epochId },
-        { trait_type: "Old One", value: oldOneName },
+        { trait_type: "Old One", value: oldOne.name },
         { trait_type: "Tier", value: tierName },
         { trait_type: "Tier ID", value: tierId },
       ],

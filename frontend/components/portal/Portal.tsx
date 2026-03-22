@@ -28,8 +28,8 @@ export default function Portal({
   const tentacleCount = Math.floor(intensity * 8);
 
   return (
-    <div className={shake ? "animate-shake" : ""}>
-      <svg viewBox="0 0 220 220" className="w-full h-full">
+    <div className={shake ? "animate-shake" : ""} style={{ width: "100%", height: "100%" }}>
+      <svg viewBox="0 0 220 220" width="100%" height="100%">
         <defs>
           <radialGradient id="voidGlow" cx="50%" cy="50%" r="50%">
             <stop offset="0%" stopColor="#7c3aed" stopOpacity={glowOpacity} />

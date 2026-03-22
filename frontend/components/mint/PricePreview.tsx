@@ -27,21 +27,21 @@ export function PricePreview({ ethAmount }: Props) {
     : "—";
 
   return (
-    <div className="card-raised p-3 space-y-2">
+    <div className="card-raised p-2.5 sm:p-3 space-y-1.5 sm:space-y-2">
       <div className="flex justify-between items-center">
-        <span className="text-[11px] text-gray-500 tracking-[2px] uppercase font-mono">
+        <span className="text-[10px] sm:text-[11px] text-gray-500 tracking-[1px] sm:tracking-[2px] uppercase font-mono">
           Price per $RITUAL
         </span>
-        <span className="text-sm text-gray-300 font-mono">
+        <span className="text-xs sm:text-sm text-gray-300 font-mono">
           {priceDisplay} ETH
         </span>
       </div>
 
       <div className="flex justify-between items-center">
-        <span className="text-[11px] text-gray-500 tracking-[2px] uppercase font-mono">
+        <span className="text-[10px] sm:text-[11px] text-gray-500 tracking-[1px] sm:tracking-[2px] uppercase font-mono">
           You receive ~
         </span>
-        <span className="text-sm font-mono text-ritual-light">
+        <span className="text-xs sm:text-sm font-mono text-ritual-light">
           {estimatedTokens !== null
             ? estimatedTokens.toLocaleString(undefined, { maximumFractionDigits: 2 }) + " $RITUAL"
             : "—"}
@@ -49,10 +49,10 @@ export function PricePreview({ ethAmount }: Props) {
       </div>
 
       <div className="flex justify-between items-center">
-        <span className="text-[11px] text-gray-500 tracking-[2px] uppercase font-mono">
+        <span className="text-[10px] sm:text-[11px] text-gray-500 tracking-[1px] sm:tracking-[2px] uppercase font-mono">
           Protocol fee
         </span>
-        <span className="text-sm text-gray-500 font-mono">12%</span>
+        <span className="text-xs sm:text-sm text-gray-500 font-mono">12%</span>
       </div>
     </div>
   );

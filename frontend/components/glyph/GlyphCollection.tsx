@@ -15,11 +15,11 @@ export default function GlyphCollection() {
 
   if (glyphs.length === 0) {
     return (
-      <div className="card min-h-[300px]">
+      <div className="card min-h-[200px] sm:min-h-[300px]">
         <div className="section-label">
           Your Glyph Collection — 0 acquired
         </div>
-        <div className="text-center py-10 text-gray-600 italic">
+        <div className="text-center py-8 sm:py-10 text-gray-600 italic text-sm">
           No glyphs yet. Perform a sacrifice to receive your first glyph.
         </div>
       </div>
@@ -27,11 +27,11 @@ export default function GlyphCollection() {
   }
 
   return (
-    <div className="card min-h-[300px]">
+    <div className="card min-h-[200px] sm:min-h-[300px]">
       <div className="section-label">
         Your Glyph Collection — {glyphs.length} acquired
       </div>
-      <div className="grid gap-1.5" style={{ gridTemplateColumns: "repeat(auto-fill, minmax(52px, 1fr))" }}>
+      <div className="grid gap-1 sm:gap-1.5" style={{ gridTemplateColumns: "repeat(auto-fill, minmax(44px, 1fr))" }}>
         {glyphs.map((glyph, i) => {
           const tier = GLYPH_TIERS.find((t) => t.name === glyph.tierName) || GLYPH_TIERS[0];
           return (

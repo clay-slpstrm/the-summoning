@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import "./globals.css";
 import { WalletProvider } from "@/components/providers/WalletProvider";
+import { WebSocketProvider } from "@/components/providers/WebSocketProvider";
 
 export const metadata: Metadata = {
   title: "The Summoning — A Lovecraftian Onchain Coordination Game",
@@ -21,7 +22,9 @@ export default function RootLayout({
   return (
     <html lang="en">
       <body>
-        <WalletProvider>{children}</WalletProvider>
+        <WalletProvider>
+          <WebSocketProvider>{children}</WebSocketProvider>
+        </WalletProvider>
       </body>
     </html>
   );

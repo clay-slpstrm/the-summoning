@@ -34,7 +34,7 @@ export function MintInterface() {
   const isDisabled = isPending || isConfirming || !ethAmount || Number(ethAmount) <= 0;
 
   return (
-    <div className="card space-y-5">
+    <div className="card space-y-4 sm:space-y-5">
       <div className="section-label">Acquire $RITUAL</div>
 
       {isConnected ? (
@@ -57,13 +57,14 @@ export function MintInterface() {
             <div className="flex gap-2 items-center">
               <input
                 type="number"
+                inputMode="decimal"
                 value={ethAmount}
                 onChange={(e) => setEthAmount(e.target.value)}
                 min="0"
                 step="0.001"
                 placeholder="0.01"
-                className="flex-1 bg-void-raised border border-void-border rounded-lg px-3 py-2
-                           text-sm font-mono text-gray-200 outline-none
+                className="flex-1 bg-void-raised border border-void-border rounded-lg px-3 py-2.5 sm:py-2
+                           text-base sm:text-sm font-mono text-gray-200 outline-none
                            focus:border-ritual/50 transition-colors"
               />
               <span className="text-sm text-gray-500 font-mono">ETH</span>

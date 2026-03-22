@@ -73,7 +73,7 @@ export default function GlyphReveal() {
             opacity: phase >= 1 ? 1 : 0,
           }}
           transition={{ type: "spring", stiffness: 300, damping: 20 }}
-          className="text-center p-10 rounded-2xl relative"
+          className="text-center p-6 sm:p-10 rounded-2xl relative mx-4 sm:mx-0"
           style={{
             background: phase >= 2 ? tierConfig.bg : "#0a0a0f",
             border: `1px solid ${phase >= 2 ? tierConfig.color + "66" : "#1e1e2e"}`,
@@ -101,7 +101,7 @@ export default function GlyphReveal() {
                 initial={{ scale: 1.5, opacity: 0 }}
                 animate={{ scale: 1, opacity: 1 }}
                 transition={{ duration: 0.4 }}
-                className="text-7xl mb-2"
+                className="text-6xl sm:text-7xl mb-2"
                 style={{ filter: `drop-shadow(0 0 20px ${tierConfig.color})` }}
               >
                 {revealGlyph.rune}
@@ -132,7 +132,7 @@ export default function GlyphReveal() {
                 initial={{ opacity: 0 }}
                 animate={{ opacity: phase >= 3 ? 1 : 0 }}
                 transition={{ delay: 0.3 }}
-                className="text-xs text-gray-400 italic mt-3 max-w-[250px] leading-relaxed"
+                className="text-[11px] sm:text-xs text-gray-400 italic mt-3 max-w-[220px] sm:max-w-[250px] mx-auto leading-relaxed"
               >
                 &ldquo;{revealGlyph.lore}&rdquo;
               </motion.div>

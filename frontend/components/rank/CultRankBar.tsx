@@ -23,26 +23,26 @@ export default function CultRankBar() {
   const nextRank = CULT_RANKS.find((r) => r.minGlyphs > glyphCount);
 
   return (
-    <div className="card-raised p-3 mt-4">
-      <div className="flex justify-between items-center">
-        <div>
-          <span className="text-[10px] text-gray-500 tracking-[2px]">
+    <div className="card-raised p-2.5 sm:p-3 mt-3 sm:mt-4">
+      <div className="flex justify-between items-center gap-2">
+        <div className="min-w-0">
+          <span className="text-[9px] sm:text-[10px] text-gray-500 tracking-[1.5px] sm:tracking-[2px]">
             CULT RANK:{" "}
           </span>
           <span
-            className="text-[13px] font-bold"
+            className="text-[12px] sm:text-[13px] font-bold"
             style={{ color: currentRank.color }}
           >
             {currentRank.name}
           </span>
         </div>
         {nextRank ? (
-          <div className="text-[10px] text-gray-600">
-            {nextRank.minGlyphs - glyphCount} glyphs to{" "}
+          <div className="text-[9px] sm:text-[10px] text-gray-600 whitespace-nowrap">
+            {nextRank.minGlyphs - glyphCount} to{" "}
             <span style={{ color: nextRank.color }}>{nextRank.name}</span>
           </div>
         ) : (
-          <div className="text-[10px] text-tier-breach">MAX RANK</div>
+          <div className="text-[9px] sm:text-[10px] text-tier-breach">MAX RANK</div>
         )}
       </div>
 

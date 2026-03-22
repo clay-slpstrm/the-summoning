@@ -29,7 +29,9 @@ architecture decisions, or data models, you must:
 4. If I say yes, update the relevant sections in the doc and include
    the doc changes in the same commit as the code changes.
 
-Do this every time — even for small tweaks. The docs are the
+Do this every time — even for small
+
+ tweaks. The docs are the
 source of truth and must stay in sync with the code.
 
 ## Repository Structure

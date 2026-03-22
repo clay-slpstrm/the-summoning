@@ -42,13 +42,24 @@ export const BONDING_CURVE_ABI = parseAbi([
 ]);
 
 export const SUMMONING_ENGINE_ABI = parseAbi([
+  // Core gameplay
   "function commitRitual(uint256 amount)",
+  "function resolveEpoch()",
   "function claimReward(uint256 epochId)",
+  // Views
   "function currentEpochId() view returns (uint256)",
-  "function contributions(uint256 epochId, address wallet) view returns (uint256)",
   "function getCurrentPhase() view returns (uint8)",
+  "function getEpoch(uint256 epochId) view returns (uint256 oldOneId, uint256 threshold, uint256 totalCommitted, uint256 gatheringStart, uint256 ritualStart, uint256 ritualEnd, bool successful, bool resolved, uint256 participantCount)",
+  "function getContribution(uint256 epochId, address wallet) view returns (uint256)",
+  "function getContributors(uint256 epochId) view returns (address[])",
+  "function nextThreshold() view returns (uint256)",
   "function lastSacrificeTime(address) view returns (uint256)",
+  "function contributions(uint256 epochId, address wallet) view returns (uint256)",
+  // Events
+  "event EpochStarted(uint256 indexed epochId, uint256 oldOneId, uint256 threshold, uint256 gatheringStart)",
   "event RitualSacrifice(uint256 indexed epochId, address indexed wallet, uint256 amount, uint256 totalCommitted)",
+  "event EpochResolved(uint256 indexed epochId, bool successful, uint256 totalBurned)",
+  "event RewardClaimed(uint256 indexed epochId, address indexed wallet, uint256 tierId)",
 ]);
 
 export const ELDER_ARTIFACTS_ABI = parseAbi([

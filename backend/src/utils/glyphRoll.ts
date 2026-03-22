@@ -27,7 +27,7 @@ export function rollGlyphFromTxHash(txHash: string): GlyphRoll {
 
   // Tier roll: use first 8 bytes as a fraction of 10000
   const tierRoll = Number(seedNum % 10000n) / 10000;
-  let tier = GLYPH_TIERS[0];
+  let tier: typeof GLYPH_TIERS[number] = GLYPH_TIERS[0];
   let cumulative = 0;
   for (const t of GLYPH_TIERS) {
     cumulative += t.chance;
