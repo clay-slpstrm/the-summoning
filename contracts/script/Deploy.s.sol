@@ -27,9 +27,12 @@ contract Deploy is Script {
         );
 
         // 4. Deploy SummoningEngine
+        // NOTE: Requires EldritchGlyphs address. Use DeployGlyphs.s.sol for new deployments.
+        address glyphs = vm.envAddress("ELDRITCH_GLYPHS_ADDRESS");
         SummoningEngine engine = new SummoningEngine(
             address(token),
             address(artifacts),
+            glyphs,
             owner
         );
 

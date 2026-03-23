@@ -27,9 +27,12 @@ contract DeployWeek2 is Script {
         );
 
         // 2. Deploy full SummoningEngine implementation
+        // NOTE: Requires EldritchGlyphs address. Use DeployGlyphs.s.sol for new deployments.
+        address glyphs = vm.envAddress("ELDRITCH_GLYPHS_ADDRESS");
         SummoningEngine engine = new SummoningEngine(
             ritualToken,
             address(artifacts),
+            glyphs,
             owner
         );
 

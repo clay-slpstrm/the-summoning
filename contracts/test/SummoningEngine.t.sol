@@ -5,11 +5,34 @@ import "forge-std/Test.sol";
 import "../src/SummoningEngine.sol";
 import "../src/RitualToken.sol";
 import "../src/ElderArtifacts.sol";
+import "../src/interfaces/IEldritchGlyphs.sol";
+
+/// @dev Minimal mock so SummoningEngine tests don't need full VRF stack.
+contract MockGlyphs is IEldritchGlyphs {
+    uint256 public nextRequestId = 1;
+
+    function requestGlyph(address, uint256) external returns (uint256 requestId) {
+        requestId = nextRequestId++;
+    }
+
+    function getGlyphData(uint256) external pure returns (GlyphData memory) {
+        return GlyphData(0, 0, 0, 0, address(0));
+    }
+
+    function glyphCount(address) external pure returns (uint256) {
+        return 0;
+    }
+
+    function totalMinted() external pure returns (uint256) {
+        return 0;
+    }
+}
 
 contract SummoningEngineTest is Test {
     SummoningEngine engine;
     RitualToken token;
     ElderArtifacts artifacts;
+    MockGlyphs mockGlyphs;
 
     address owner    = makeAddr("owner");
     address alice    = makeAddr("alice");
@@ -22,9 +45,10 @@ contract SummoningEngineTest is Test {
 
     function setUp() public {
         vm.startPrank(owner);
-        token     = new RitualToken(owner);
-        artifacts = new ElderArtifacts("https://example.com/{id}.json", owner);
-        engine    = new SummoningEngine(address(token), address(artifacts), owner);
+        token      = new RitualToken(owner);
+        artifacts  = new ElderArtifacts("https://example.com/{id}.json", owner);
+        mockGlyphs = new MockGlyphs();
+        engine     = new SummoningEngine(address(token), address(artifacts), address(mockGlyphs), owner);
         token.setMinter(address(engine));
         artifacts.setEngine(address(engine));
         vm.stopPrank();
@@ -70,13 +94,19 @@ contract SummoningEngineTest is Test {
     function test_Constructor_RevertsOnZeroToken() public {
         vm.prank(owner);
         vm.expectRevert(SummoningEngine.SummoningEngine__ZeroAddress.selector);
-        new SummoningEngine(address(0), address(artifacts), owner);
+        new SummoningEngine(address(0), address(artifacts), address(mockGlyphs), owner);
     }
 
     function test_Constructor_RevertsOnZeroArtifacts() public {
         vm.prank(owner);
         vm.expectRevert(SummoningEngine.SummoningEngine__ZeroAddress.selector);
-        new SummoningEngine(address(token), address(0), owner);
+        new SummoningEngine(address(token), address(0), address(mockGlyphs), owner);
+    }
+
+    function test_Constructor_RevertsOnZeroGlyphs() public {
+        vm.prank(owner);
+        vm.expectRevert(SummoningEngine.SummoningEngine__ZeroAddress.selector);
+        new SummoningEngine(address(token), address(artifacts), address(0), owner);
     }
 
     // ── startEpoch ───────────────────────────────────────────────────────────

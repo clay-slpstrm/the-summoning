@@ -5,11 +5,12 @@ import "@openzeppelin/contracts/access/Ownable.sol";
 import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 import "./interfaces/IRitualToken.sol";
 import "./interfaces/IElderArtifacts.sol";
+import "./interfaces/IEldritchGlyphs.sol";
 
 /// @title SummoningEngine
 /// @notice Core gameplay contract. Manages epoch lifecycle: Gathering → Ritual → Resolved.
 ///         Players burn $RITUAL via commitRitual during the Ritual phase.
-///         The RitualSacrifice event triggers off-chain Glyph Engine glyph assignment.
+///         Each sacrifice triggers Chainlink VRF via EldritchGlyphs to mint an on-chain glyph NFT.
 ///         After resolution, participants claim ERC-1155 artifact rewards.
 contract SummoningEngine is Ownable, ReentrancyGuard {
 
@@ -33,6 +34,7 @@ contract SummoningEngine is Ownable, ReentrancyGuard {
 
     IRitualToken public immutable ritualToken;
     IElderArtifacts public immutable artifacts;
+    IEldritchGlyphs public immutable glyphs;
 
     uint256 public currentEpochId;
     mapping(uint256 => Epoch) public epochs;
@@ -85,11 +87,15 @@ contract SummoningEngine is Ownable, ReentrancyGuard {
     constructor(
         address _token,
         address _artifacts,
+        address _glyphs,
         address _owner
     ) Ownable(_owner) {
-        if (_token == address(0) || _artifacts == address(0)) revert SummoningEngine__ZeroAddress();
+        if (_token == address(0) || _artifacts == address(0) || _glyphs == address(0)) {
+            revert SummoningEngine__ZeroAddress();
+        }
         ritualToken = IRitualToken(_token);
         artifacts = IElderArtifacts(_artifacts);
+        glyphs = IEldritchGlyphs(_glyphs);
     }
 
     // ── Epoch Management (Owner) ─────────────────────────────────────────────
@@ -127,8 +133,8 @@ contract SummoningEngine is Ownable, ReentrancyGuard {
     // ── Core Gameplay ────────────────────────────────────────────────────────
 
     /// @notice Burn $RITUAL tokens to participate in the current epoch's summoning ritual.
-    ///         Tokens are burned immediately on call. Emits RitualSacrifice — the trigger
-    ///         for the off-chain Glyph Engine to assign a glyph to the caller.
+    ///         Tokens are burned immediately. A Chainlink VRF request is sent to EldritchGlyphs
+    ///         to mint a provably fair glyph NFT for the caller.
     ///         Caller must have approved this contract for at least `amount` $RITUAL.
     /// @param amount Token amount (18 decimals) to sacrifice. Must be >= MIN_SACRIFICE.
     function commitRitual(uint256 amount) external nonReentrant {
@@ -162,6 +168,9 @@ contract SummoningEngine is Ownable, ReentrancyGuard {
         ritualToken.burnFrom(msg.sender, amount);
 
         emit RitualSacrifice(id, msg.sender, amount, epoch.totalCommitted);
+
+        // Request glyph mint via Chainlink VRF
+        glyphs.requestGlyph(msg.sender, id);
     }
 
     /// @notice Resolve the current epoch after the ritual window closes.
