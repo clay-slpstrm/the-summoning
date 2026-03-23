@@ -4,6 +4,7 @@ import { useAccount } from "wagmi";
 import { Header } from "@/components/layout/Header";
 import { MintInterface } from "@/components/mint/MintInterface";
 import GlyphReveal from "@/components/glyph/GlyphReveal";
+import ChannelingOverlay from "@/components/glyph/ChannelingOverlay";
 import GlyphCollection from "@/components/glyph/GlyphCollection";
 import Portal from "@/components/portal/Portal";
 import EpochStatus from "@/components/epoch/EpochStatus";
@@ -34,6 +35,7 @@ export default function Home() {
       />
 
       {/* Full-screen glyph reveal modal */}
+      <ChannelingOverlay />
       <GlyphReveal />
 
       {/* Content */}

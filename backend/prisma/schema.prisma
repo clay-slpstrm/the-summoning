@@ -8,21 +8,28 @@ datasource db {
 }
 
 model Glyph {
-  id          String   @id @default(cuid())
-  walletAddr  String   @db.VarChar(42)
-  epochId     Int
-  txHash      String   @db.VarChar(66) @unique
-  tierName    String   // Whisper, Echo, Tremor, Rupture, Breach
-  tierIndex   Int      // 0-4
-  rune        String   // Unicode rune symbol
-  lore        String   // Lore message text
-  amount      String   // $RITUAL burned (stored as string for BigInt)
-  blockNumber Int
-  createdAt   DateTime @default(now())
+  id              String   @id @default(cuid())
+  walletAddr      String   @db.VarChar(42)
+  epochId         Int
+  txHash          String   @db.VarChar(66) @unique // VRF fulfillment tx hash
+  sacrificeTxHash String?  @db.VarChar(66)          // Original sacrifice tx hash
+  tokenId         Int?     @unique                  // On-chain ERC-1155 token ID
+  requestId       String?  @db.VarChar(78)          // VRF request ID
+  status          String   @default("confirmed")    // "pending" | "confirmed"
+  tierName        String   // Whisper, Echo, Tremor, Rupture, Breach
+  tierIndex       Int      // 0-4
+  runeIndex       Int      @default(0) // 0-29, index into RUNE_SHAPES
+  loreIndex       Int      @default(0) // 0-9, index into LORE_MESSAGES
+  rune            String   // Unicode rune symbol (derived from runeIndex)
+  lore            String   // Lore message text (derived from loreIndex)
+  amount          String   // $RITUAL burned (stored as string for BigInt)
+  blockNumber     Int
+  createdAt       DateTime @default(now())
 
   @@index([walletAddr])
   @@index([epochId])
   @@index([tierIndex])
+  @@index([status])
 }
 
 model CultRank {

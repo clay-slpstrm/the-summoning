@@ -3,8 +3,9 @@ import { create } from "zustand";
 /**
  * Client-side glyph state.
  *
- * Stores the user's glyph collection and manages the reveal modal.
- * Hydrated from backend API on wallet connect, updated via WebSocket.
+ * Stores the user's glyph collection, pending VRF requests, and
+ * manages the reveal modal. Hydrated from backend API on wallet
+ * connect, updated via WebSocket.
  */
 
 export type GlyphData = {
@@ -17,6 +18,13 @@ export type GlyphData = {
   amount: string;
   epochId: number;
   id?: string;
+  tokenId?: number;
+};
+
+export type PendingGlyph = {
+  requestId: string;
+  epochId: number;
+  timestamp: number;
 };
 
 type GlyphStore = {
@@ -24,6 +32,12 @@ type GlyphStore = {
   glyphs: GlyphData[];
   setGlyphs: (glyphs: GlyphData[]) => void;
   addGlyph: (glyph: GlyphData) => void;
+
+  // Pending VRF requests
+  pendingGlyphs: PendingGlyph[];
+  addPending: (pending: PendingGlyph) => void;
+  removePending: (requestId: string) => void;
+  clearPending: () => void;
 
   // Reveal modal
   revealGlyph: GlyphData | null;
@@ -40,6 +54,20 @@ export const useGlyphStore = create<GlyphStore>((set, get) => ({
 
   addGlyph: (glyph) =>
     set((state) => ({ glyphs: [glyph, ...state.glyphs] })),
+
+  pendingGlyphs: [],
+
+  addPending: (pending) =>
+    set((state) => ({
+      pendingGlyphs: [...state.pendingGlyphs, pending],
+    })),
+
+  removePending: (requestId) =>
+    set((state) => ({
+      pendingGlyphs: state.pendingGlyphs.filter((p) => p.requestId !== requestId),
+    })),
+
+  clearPending: () => set({ pendingGlyphs: [] }),
 
   revealGlyph: null,
 

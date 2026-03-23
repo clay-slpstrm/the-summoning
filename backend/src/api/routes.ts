@@ -1,6 +1,6 @@
 import type { Express } from "express";
 import { PrismaClient } from "@prisma/client";
-import { CULT_RANKS, OLD_ONES } from "../utils/constants.js";
+import { CULT_RANKS, GLYPH_TIERS, RUNE_SHAPES, LORE_MESSAGES, OLD_ONES } from "../utils/constants.js";
 
 const prisma = new PrismaClient();
 
@@ -10,10 +10,20 @@ export function setupRoutes(app: Express): void {
   app.get("/api/glyphs/:wallet", async (req, res) => {
     const wallet = req.params.wallet.toLowerCase();
     const glyphs = await prisma.glyph.findMany({
-      where: { walletAddr: wallet },
+      where: { walletAddr: wallet, status: "confirmed" },
       orderBy: { createdAt: "desc" },
     });
     res.json({ glyphs });
+  });
+
+  // Pending VRF requests for a wallet
+  app.get("/api/glyphs/:wallet/pending", async (req, res) => {
+    const wallet = req.params.wallet.toLowerCase();
+    const pending = await prisma.glyph.findMany({
+      where: { walletAddr: wallet, status: "pending" },
+      orderBy: { createdAt: "desc" },
+    });
+    res.json({ pending });
   });
 
   app.get("/api/glyphs/:wallet/summary", async (req, res) => {
@@ -23,7 +33,7 @@ export function setupRoutes(app: Express): void {
     });
     const tierCounts = await prisma.glyph.groupBy({
       by: ["tierName"],
-      where: { walletAddr: wallet },
+      where: { walletAddr: wallet, status: "confirmed" },
       _count: true,
     });
     res.json({
@@ -59,7 +69,6 @@ export function setupRoutes(app: Express): void {
     res.json({ leaderboard });
   });
 
-  // Top glyph collectors with tier breakdown
   app.get("/api/leaderboard/glyphs", async (req, res) => {
     const topWallets = await prisma.cultRank.findMany({
       orderBy: { glyphCount: "desc" },
@@ -68,8 +77,70 @@ export function setupRoutes(app: Express): void {
     res.json({ leaderboard: topWallets });
   });
 
-  // ── ERC-1155 Metadata ──
+  // ── ERC-1155 Metadata: Elder Artifacts ──
 
+  app.get("/api/metadata/artifact/:tokenId", async (req, res) => {
+    const tokenId = parseInt(req.params.tokenId);
+    const epochId = Math.floor(tokenId / 1000);
+    const tierId = tokenId % 1000;
+
+    const tierNames: Record<number, string> = {
+      0: "Shattered Ritual",
+      1: "Harbinger",
+      2: "Acolyte",
+      3: "Cultist",
+    };
+
+    const tierName = tierNames[tierId] || "Unknown";
+
+    const epochRecord = await prisma.epochCache.findUnique({ where: { epochId } });
+    const oldOne = epochRecord ? (OLD_ONES[epochRecord.oldOneId] ?? OLD_ONES[1]) : OLD_ONES[1];
+
+    res.json({
+      name: `Fragment of ${oldOne.name} — ${tierName}`,
+      description: `A shard of ${oldOne.description}, pulled from beyond the veil during Epoch ${epochId}.`,
+      image: `https://api.thesummoning.xyz/images/artifact/${tokenId}.png`,
+      attributes: [
+        { trait_type: "Epoch", value: epochId },
+        { trait_type: "Old One", value: oldOne.name },
+        { trait_type: "Tier", value: tierName },
+        { trait_type: "Tier ID", value: tierId },
+      ],
+    });
+  });
+
+  // ── ERC-1155 Metadata: Eldritch Glyphs (on-chain NFTs) ──
+
+  app.get("/api/metadata/glyph/:tokenId", async (req, res) => {
+    const tokenId = parseInt(req.params.tokenId);
+
+    const glyph = await prisma.glyph.findFirst({
+      where: { tokenId },
+    });
+
+    if (!glyph) {
+      res.status(404).json({ error: "Glyph not found" });
+      return;
+    }
+
+    const tier = GLYPH_TIERS[glyph.tierIndex] ?? GLYPH_TIERS[0];
+
+    res.json({
+      name: `Eldritch Glyph #${tokenId} — ${tier.name}`,
+      description: `${glyph.lore} A ${tier.name}-tier glyph channeled during Epoch ${glyph.epochId}.`,
+      image: `https://api.thesummoning.xyz/images/glyph/${tokenId}.png`,
+      attributes: [
+        { trait_type: "Tier", value: tier.name },
+        { trait_type: "Tier Index", value: glyph.tierIndex },
+        { trait_type: "Rune", value: glyph.rune },
+        { trait_type: "Rune Index", value: glyph.runeIndex },
+        { trait_type: "Lore", value: glyph.lore },
+        { trait_type: "Epoch", value: glyph.epochId },
+      ],
+    });
+  });
+
+  // Keep old /api/metadata/:tokenId for backward compatibility with ElderArtifacts
   app.get("/api/metadata/:tokenId", async (req, res) => {
     const tokenId = parseInt(req.params.tokenId);
     const epochId = Math.floor(tokenId / 1000);
@@ -84,7 +155,6 @@ export function setupRoutes(app: Express): void {
 
     const tierName = tierNames[tierId] || "Unknown";
 
-    // Look up Old One from EpochCache, fall back to unknown
     const epochRecord = await prisma.epochCache.findUnique({ where: { epochId } });
     const oldOne = epochRecord ? (OLD_ONES[epochRecord.oldOneId] ?? OLD_ONES[1]) : OLD_ONES[1];
 

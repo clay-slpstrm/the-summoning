@@ -8,7 +8,7 @@ import {
   type ReactNode,
 } from "react";
 import { useAccount } from "wagmi";
-import { useGlyphStore, type GlyphData } from "@/stores/glyphStore";
+import { useGlyphStore, type GlyphData, type PendingGlyph } from "@/stores/glyphStore";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3001";
 
@@ -18,7 +18,10 @@ const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3001";
  * Connects to the backend WS server, authenticates with the user's
  * wallet address, and routes incoming messages to the appropriate store.
  *
- * See ARCHITECTURE.md Section 5.4 for specification.
+ * Handles:
+ *   - glyph_pending  → VRF request sent, show channeling state
+ *   - glyph_reveal   → VRF callback, remove pending + trigger reveal
+ *   - epoch_update    → broadcast epoch progress
  */
 
 type WSContextType = {
@@ -39,6 +42,9 @@ export function WebSocketProvider({ children }: { children: ReactNode }) {
   const wsRef = useRef<WebSocket | null>(null);
   const setRevealGlyph = useGlyphStore((s) => s.setRevealGlyph);
   const setGlyphs = useGlyphStore((s) => s.setGlyphs);
+  const addPending = useGlyphStore((s) => s.addPending);
+  const removePending = useGlyphStore((s) => s.removePending);
+  const clearPending = useGlyphStore((s) => s.clearPending);
 
   useEffect(() => {
     if (!address) {
@@ -55,10 +61,22 @@ export function WebSocketProvider({ children }: { children: ReactNode }) {
       ws.onopen = () => {
         console.log("[WS] Connected");
         ws.send(JSON.stringify({ type: "auth", wallet: address }));
+
         // Fetch REST on (re)connect to catch any glyphs missed while disconnected
         fetch(`${API_URL}/api/glyphs/${address!.toLowerCase()}`)
           .then((r) => r.json())
           .then((data: { glyphs: GlyphData[] }) => setGlyphs(data.glyphs))
+          .catch(() => { /* non-fatal */ });
+
+        // Fetch pending VRF requests
+        fetch(`${API_URL}/api/glyphs/${address!.toLowerCase()}/pending`)
+          .then((r) => r.json())
+          .then((data: { pending: PendingGlyph[] }) => {
+            clearPending();
+            for (const p of data.pending) {
+              addPending(p);
+            }
+          })
           .catch(() => { /* non-fatal */ });
       };
 
@@ -67,12 +85,27 @@ export function WebSocketProvider({ children }: { children: ReactNode }) {
           const msg = JSON.parse(event.data);
 
           switch (msg.type) {
+            case "glyph_pending":
+              // VRF request sent — show channeling state
+              addPending({
+                requestId: msg.data.requestId,
+                epochId: msg.data.epochId,
+                timestamp: msg.data.timestamp,
+              });
+              break;
+
             case "glyph_reveal":
+              // VRF callback — glyph minted on-chain
+              // Remove from pending (by epochId since requestId may not match)
+              removePending(msg.data.requestId ?? "");
+              // Trigger reveal animation
               setRevealGlyph(msg.data);
               break;
+
             case "epoch_update":
               // TODO: Update epoch progress in store
               break;
+
             case "auth_ok":
               console.log("[WS] Authenticated as", msg.wallet);
               break;
@@ -99,7 +132,7 @@ export function WebSocketProvider({ children }: { children: ReactNode }) {
       wsRef.current?.close();
       wsRef.current = null;
     };
-  }, [address, setRevealGlyph, setGlyphs]);
+  }, [address, setRevealGlyph, setGlyphs, addPending, removePending, clearPending]);
 
   return (
     <WSContext.Provider value={{ isConnected: !!wsRef.current }}>

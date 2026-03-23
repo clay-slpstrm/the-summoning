@@ -4,7 +4,7 @@ import { WebSocketServer } from "ws";
 import { createServer } from "http";
 import { config, validateConfig } from "./config.js";
 import { wsManager } from "./services/wsManager.js";
-import { startEventListener } from "./services/eventListener.js";
+import { startEventListener, startGlyphEventListener } from "./services/eventListener.js";
 import { startEpochSync } from "./services/epochSync.js";
 import { setupRoutes } from "./api/routes.js";
 
@@ -38,6 +38,12 @@ server.listen(config.PORT, () => {
     startEventListener();
     startEpochSync();
   } else {
-    console.warn("[EVENTS] No contract address configured, listeners disabled");
+    console.warn("[EVENTS] No SUMMONING_ENGINE_ADDRESS configured, engine listener disabled");
+  }
+
+  if (config.ELDRITCH_GLYPHS_ADDRESS) {
+    startGlyphEventListener();
+  } else {
+    console.warn("[EVENTS] No ELDRITCH_GLYPHS_ADDRESS configured, glyph listener disabled");
   }
 });

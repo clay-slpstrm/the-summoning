@@ -23,6 +23,9 @@ export const SUMMONING_ENGINE_ADDRESS =
 export const ELDER_ARTIFACTS_ADDRESS =
   (process.env.NEXT_PUBLIC_ELDER_ARTIFACTS_ADDRESS || "") as `0x${string}`;
 
+export const ELDRITCH_GLYPHS_ADDRESS =
+  (process.env.NEXT_PUBLIC_ELDRITCH_GLYPHS_ADDRESS || "") as `0x${string}`;
+
 // ── ABIs ──
 // Using parseAbi from viem so wagmi v2 hooks receive properly typed ABI objects.
 
@@ -66,4 +69,16 @@ export const ELDER_ARTIFACTS_ABI = parseAbi([
   "function balanceOf(address account, uint256 id) view returns (uint256)",
   "function balanceOfBatch(address[] accounts, uint256[] ids) view returns (uint256[])",
   "function uri(uint256 tokenId) view returns (string)",
+]);
+
+export const ELDRITCH_GLYPHS_ABI = parseAbi([
+  // Views
+  "function glyphCount(address wallet) view returns (uint256)",
+  "function totalMinted() view returns (uint256)",
+  "function getGlyphData(uint256 tokenId) view returns (uint8 tier, uint8 runeIndex, uint8 loreIndex, uint256 epochId, address originalRecipient)",
+  "function balanceOf(address account, uint256 id) view returns (uint256)",
+  "function uri(uint256 tokenId) view returns (string)",
+  // Events
+  "event GlyphRequested(uint256 indexed requestId, address indexed recipient, uint256 epochId)",
+  "event GlyphMinted(uint256 indexed tokenId, address indexed recipient, uint8 tier, uint8 runeIndex, uint8 loreIndex, uint256 epochId)",
 ]);

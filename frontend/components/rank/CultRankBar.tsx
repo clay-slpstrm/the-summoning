@@ -2,25 +2,21 @@
  * Cult rank progress bar.
  *
  * Shows current rank, distance to next rank, and segmented progress.
+ * Uses on-chain glyph count from EldritchGlyphs contract when available,
+ * so rank reflects purchased glyphs too.
+ *
  * See PRD.md Section 4.7 and Section 7 for acceptance criteria.
  */
 
 "use client";
 
+import { useAccount } from "wagmi";
 import { CULT_RANKS } from "@/lib/constants";
-import { useGlyphStore } from "@/stores/glyphStore";
+import { useCultRank } from "@/hooks/useCultRank";
 
 export default function CultRankBar() {
-  const glyphCount = useGlyphStore((s) => s.glyphs.length);
-
-  // Calculate current rank
-  let currentRank: (typeof CULT_RANKS)[number] = CULT_RANKS[0];
-  for (const r of CULT_RANKS) {
-    if (glyphCount >= r.minGlyphs) currentRank = r;
-  }
-
-  // Find next rank
-  const nextRank = CULT_RANKS.find((r) => r.minGlyphs > glyphCount);
+  const { address } = useAccount();
+  const { glyphCount, currentRank, nextRank, glyphsToNext, isMaxRank } = useCultRank(address);
 
   return (
     <div className="card-raised p-2.5 sm:p-3 mt-3 sm:mt-4">
@@ -36,9 +32,9 @@ export default function CultRankBar() {
             {currentRank.name}
           </span>
         </div>
-        {nextRank ? (
+        {!isMaxRank && nextRank ? (
           <div className="text-[9px] sm:text-[10px] text-gray-600 whitespace-nowrap">
-            {nextRank.minGlyphs - glyphCount} to{" "}
+            {glyphsToNext} to{" "}
             <span style={{ color: nextRank.color }}>{nextRank.name}</span>
           </div>
         ) : (

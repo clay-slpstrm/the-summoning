@@ -15,6 +15,7 @@ export const config = {
   BONDING_CURVE_ADDRESS: process.env.BONDING_CURVE_ADDRESS || "",
   SUMMONING_ENGINE_ADDRESS: process.env.SUMMONING_ENGINE_ADDRESS || "",
   ELDER_ARTIFACTS_ADDRESS: process.env.ELDER_ARTIFACTS_ADDRESS || "",
+  ELDRITCH_GLYPHS_ADDRESS: process.env.ELDRITCH_GLYPHS_ADDRESS || "",
 
   // Database
   DATABASE_URL: process.env.DATABASE_URL || "postgresql://postgres:password@localhost:5432/summoning",
