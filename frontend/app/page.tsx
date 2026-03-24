@@ -10,6 +10,7 @@ import Portal from "@/components/portal/Portal";
 import EpochStatus from "@/components/epoch/EpochStatus";
 import CultRankBar from "@/components/rank/CultRankBar";
 import Leaderboard from "@/components/rank/Leaderboard";
+import SacrificePanel from "@/components/sacrifice/SacrificePanel";
 import { useGlyphs } from "@/hooks/useGlyphs";
 import { useEpochProgress } from "@/hooks/useEpochProgress";
 import { useUIStore } from "@/stores/uiStore";
@@ -64,7 +65,12 @@ export default function Home() {
           <EpochStatus />
         </div>
 
-        {/* TODO Week 2: SacrificePanel */}
+        {/* Sacrifice panel — visible during Ritual phase */}
+        {address && epoch && (
+          <div className="max-w-md mx-auto mt-6 sm:mt-8">
+            <SacrificePanel epoch={epoch} />
+          </div>
+        )}
 
         {/* Glyph collection + rank */}
         {address && (

@@ -691,4 +691,142 @@ contract SummoningEngineTest is Test {
         assertEq(tokenId / 1000, epochId);
         assertEq(tokenId % 1000, tierId);
     }
+
+    // ── Chainlink Automation Tests ────────────────────────────────────────────
+
+    function test_CheckUpkeep_FalseWhenNoEpoch() public view {
+        (bool needed,) = engine.checkUpkeep("");
+        assertFalse(needed);
+    }
+
+    function test_CheckUpkeep_FalseDuringGathering() public {
+        vm.prank(owner);
+        engine.startEpoch(OLD_ONE_ID, THRESHOLD);
+
+        (bool needed,) = engine.checkUpkeep("");
+        assertFalse(needed);
+    }
+
+    function test_CheckUpkeep_FalseDuringRitual() public {
+        _startAndWarpToRitual();
+
+        (bool needed,) = engine.checkUpkeep("");
+        assertFalse(needed);
+    }
+
+    function test_CheckUpkeep_TrueAfterRitualEnd() public {
+        _startAndWarpToRitual();
+        SummoningEngine.Epoch memory e = engine.getEpoch(1);
+        vm.warp(e.ritualEnd);
+
+        (bool needed, bytes memory performData) = engine.checkUpkeep("");
+        assertTrue(needed);
+
+        uint256 epochId = abi.decode(performData, (uint256));
+        assertEq(epochId, 1);
+    }
+
+    function test_CheckUpkeep_FalseAfterResolved() public {
+        _startAndWarpToRitual();
+        _resolve();
+
+        (bool needed,) = engine.checkUpkeep("");
+        assertFalse(needed);
+    }
+
+    function test_PerformUpkeep_ResolvesEpoch() public {
+        _startAndWarpToRitual();
+
+        // Sacrifice to have some activity
+        vm.prank(alice);
+        engine.commitRitual(5_000e18);
+
+        SummoningEngine.Epoch memory e = engine.getEpoch(1);
+        vm.warp(e.ritualEnd);
+
+        // Perform upkeep (as if called by Chainlink keeper)
+        engine.performUpkeep(abi.encode(uint256(1)));
+
+        e = engine.getEpoch(1);
+        assertTrue(e.resolved);
+        assertFalse(e.successful); // below threshold
+    }
+
+    function test_PerformUpkeep_EmitsEpochResolved() public {
+        _startAndWarpToRitual();
+        SummoningEngine.Epoch memory e = engine.getEpoch(1);
+        vm.warp(e.ritualEnd);
+
+        vm.expectEmit(true, false, false, true);
+        emit SummoningEngine.EpochResolved(1, false, 0);
+
+        engine.performUpkeep(abi.encode(uint256(1)));
+    }
+
+    function test_PerformUpkeep_SuccessfulEpoch() public {
+        _startAndWarpToRitual();
+
+        // Meet threshold
+        vm.prank(alice);
+        engine.commitRitual(THRESHOLD);
+
+        SummoningEngine.Epoch memory e = engine.getEpoch(1);
+        vm.warp(e.ritualEnd);
+
+        engine.performUpkeep(abi.encode(uint256(1)));
+
+        e = engine.getEpoch(1);
+        assertTrue(e.resolved);
+        assertTrue(e.successful);
+    }
+
+    function test_PerformUpkeep_Reverts_BeforeRitualEnd() public {
+        _startAndWarpToRitual();
+
+        vm.expectRevert(SummoningEngine.SummoningEngine__InvalidPhase.selector);
+        engine.performUpkeep(abi.encode(uint256(1)));
+    }
+
+    function test_PerformUpkeep_Reverts_AlreadyResolved() public {
+        _startAndWarpToRitual();
+        _resolve();
+
+        vm.expectRevert(SummoningEngine.SummoningEngine__InvalidPhase.selector);
+        engine.performUpkeep(abi.encode(uint256(1)));
+    }
+
+    function test_PerformUpkeep_Reverts_WrongEpochId() public {
+        _startAndWarpToRitual();
+        SummoningEngine.Epoch memory e = engine.getEpoch(1);
+        vm.warp(e.ritualEnd);
+
+        vm.expectRevert(SummoningEngine.SummoningEngine__NoActiveEpoch.selector);
+        engine.performUpkeep(abi.encode(uint256(99)));
+    }
+
+    function test_PerformUpkeep_Permissionless() public {
+        _startAndWarpToRitual();
+        SummoningEngine.Epoch memory e = engine.getEpoch(1);
+        vm.warp(e.ritualEnd);
+
+        // Anyone can call performUpkeep
+        address random = makeAddr("random");
+        vm.prank(random);
+        engine.performUpkeep(abi.encode(uint256(1)));
+
+        e = engine.getEpoch(1);
+        assertTrue(e.resolved);
+    }
+
+    function test_CheckUpkeep_CheckDataIgnored() public {
+        _startAndWarpToRitual();
+        SummoningEngine.Epoch memory e = engine.getEpoch(1);
+        vm.warp(e.ritualEnd);
+
+        // checkData is unused — any input should work
+        (bool needed1,) = engine.checkUpkeep("");
+        (bool needed2,) = engine.checkUpkeep(hex"deadbeef");
+        assertTrue(needed1);
+        assertTrue(needed2);
+    }
 }

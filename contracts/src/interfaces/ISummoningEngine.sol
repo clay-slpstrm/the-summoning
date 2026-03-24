@@ -27,6 +27,11 @@ interface ISummoningEngine {
     function resolveEpoch() external;
     function claimReward(uint256 epochId) external;
 
+    // ── Automation ──
+
+    function checkUpkeep(bytes calldata checkData) external view returns (bool upkeepNeeded, bytes memory performData);
+    function performUpkeep(bytes calldata performData) external;
+
     // ── Views ──
 
     function getEpoch(uint256 epochId) external view returns (Epoch memory);

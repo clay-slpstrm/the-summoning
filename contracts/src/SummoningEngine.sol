@@ -3,6 +3,7 @@ pragma solidity ^0.8.24;
 
 import "@openzeppelin/contracts/access/Ownable.sol";
 import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
+import "@chainlink/contracts/src/v0.8/automation/AutomationCompatible.sol";
 import "./interfaces/IRitualToken.sol";
 import "./interfaces/IElderArtifacts.sol";
 import "./interfaces/IEldritchGlyphs.sol";
@@ -12,7 +13,8 @@ import "./interfaces/IEldritchGlyphs.sol";
 ///         Players burn $RITUAL via commitRitual during the Ritual phase.
 ///         Each sacrifice triggers Chainlink VRF via EldritchGlyphs to mint an on-chain glyph NFT.
 ///         After resolution, participants claim ERC-1155 artifact rewards.
-contract SummoningEngine is Ownable, ReentrancyGuard {
+///         Implements Chainlink Automation for automatic epoch resolution.
+contract SummoningEngine is Ownable, ReentrancyGuard, AutomationCompatibleInterface {
 
     // ── Epoch State ──────────────────────────────────────────────────────────
 
@@ -214,6 +216,48 @@ contract SummoningEngine is Ownable, ReentrancyGuard {
         artifacts.mint(msg.sender, tokenId, 1, "");
 
         emit RewardClaimed(epochId, msg.sender, tierId);
+    }
+
+    // ── Chainlink Automation ──────────────────────────────────────────────────
+
+    /// @notice Called off-chain by Chainlink Automation nodes to check if epoch resolution is needed.
+    /// @dev Returns true when an active epoch has passed its ritualEnd and hasn't been resolved.
+    /// @return upkeepNeeded True if performUpkeep should be called.
+    /// @return performData ABI-encoded epoch ID to resolve.
+    function checkUpkeep(bytes calldata /* checkData */)
+        external
+        view
+        override
+        returns (bool upkeepNeeded, bytes memory performData)
+    {
+        if (currentEpochId == 0) return (false, "");
+
+        Epoch storage epoch = epochs[currentEpochId];
+
+        if (!epoch.resolved && block.timestamp >= epoch.ritualEnd) {
+            return (true, abi.encode(currentEpochId));
+        }
+
+        return (false, "");
+    }
+
+    /// @notice Called by Chainlink Automation to resolve an epoch.
+    /// @dev Validates that the epoch still needs resolution (state may have changed since checkUpkeep).
+    /// @param performData ABI-encoded epoch ID (from checkUpkeep).
+    function performUpkeep(bytes calldata performData) external override {
+        uint256 epochId = abi.decode(performData, (uint256));
+
+        // Validate: must be the current epoch, not yet resolved, past ritualEnd
+        if (epochId != currentEpochId) revert SummoningEngine__NoActiveEpoch();
+
+        Epoch storage epoch = epochs[epochId];
+        if (epoch.resolved) revert SummoningEngine__InvalidPhase();
+        if (block.timestamp < epoch.ritualEnd) revert SummoningEngine__InvalidPhase();
+
+        epoch.resolved = true;
+        epoch.successful = epoch.totalCommitted >= epoch.threshold;
+
+        emit EpochResolved(epochId, epoch.successful, epoch.totalCommitted);
     }
 
     // ── View Functions ───────────────────────────────────────────────────────
