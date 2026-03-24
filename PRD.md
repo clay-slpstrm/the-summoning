@@ -179,21 +179,25 @@ Player wants another pull → Repeat
 **User Story**: As a user, I want to sacrifice my $RITUAL tokens to help summon the Old One and receive an Eldritch Glyph.
 
 **Acceptance Criteria**:
-- Amount selector: slider (range 100 to min(balance, 25000)) + quick buttons (1K, 5K, 10K, 25K)
+- Amount input field + quick-select buttons (100, 500, 1000 $RITUAL)
 - Display current $RITUAL balance
-- "Perform Sacrifice" button — prominent, thematic, unmissable
-- Before first sacrifice: check if SummoningEngine has approval. If not, show "Approve $RITUAL" step first (one-time infinite approval).
+- "SACRIFICE" button — prominent, thematic, unmissable
+- Before first sacrifice: check if SummoningEngine has approval. If not, show "APPROVE & SACRIFICE" (handles both in sequence).
 - Button states:
-  - **Idle**: Purple gradient, glowing, "⬡ PERFORM SACRIFICE"
-  - **Approving**: Dimmed, "Approving..."
-  - **Channeling**: Animated, "◈ CHANNELING..."
+  - **Idle**: Purple gradient, "⬡ SACRIFICE $RITUAL"
+  - **Approving**: "APPROVE & SACRIFICE" / "CONFIRM IN WALLET..."
+  - **Sacrificing**: "SACRIFICING..." with loading animation
+  - **Success**: "SACRIFICE ACCEPTED" briefly, then resets
   - **Cooldown**: Dimmed, shows countdown timer (30 seconds)
   - **Disabled**: Gray, insufficient balance or wrong epoch phase
-- After transaction confirms: WebSocket delivers glyph → GlyphReveal overlay triggers
+- After sacrifice tx confirms: "VRF requested — channeling your glyph..." text appears
+- Full-screen ChannelingOverlay activates during Chainlink VRF wait (~30-60s)
+- VRF callback triggers GlyphReveal overlay via WebSocket `glyph_reveal`
 - Cooldown: 30 seconds between sacrifices (enforced on-chain, reflected in UI)
+- Only visible during Ritual phase (hidden otherwise)
 - Error states: insufficient balance, cooldown active, epoch not in Ritual phase, user rejected tx
 
-**Critical UX Requirement**: The time between clicking "Perform Sacrifice" and seeing the glyph reveal should feel continuous and intentional, not like waiting. The "Channeling..." animation must be engaging enough to hold attention for ~12 seconds.
+**Critical UX Requirement**: The time between clicking "Sacrifice" and seeing the glyph reveal includes a ~30-60 second Chainlink VRF wait. The ChannelingOverlay fills this gap with rotating lore text and atmospheric animations, making the wait feel like the void is deciding the user's fate rather than idle loading.
 
 **Priority**: P0 — Launch
 
@@ -389,7 +393,7 @@ Player wants another pull → Repeat
 
 ### 5.2 Rune Symbol Pool
 
-Glyphs draw from a pool of 30 unicode rune symbols. The specific rune is determined by the transaction hash (deterministic). The same tx always produces the same glyph.
+Glyphs draw from a pool of 30 unicode rune symbols. The specific rune is determined on-chain by Chainlink VRF (`randomWord % 30`). The result is stored in the EldritchGlyphs contract and indexed by the backend.
 
 ```
 ◈ ◇ ⬡ △ ▽ ⬢ ◆ ⬠ ☍ ⚝
@@ -399,7 +403,7 @@ Glyphs draw from a pool of 30 unicode rune symbols. The specific rune is determi
 
 ### 5.3 Lore Message Pool
 
-Each glyph receives one of 10 lore fragments, also determined by transaction hash.
+Each glyph receives one of 10 lore fragments, determined on-chain by Chainlink VRF (`randomWord % 10`).
 
 ```
 "The void stirs..."
@@ -419,10 +423,13 @@ Each glyph receives one of 10 lore fragments, also determined by transaction has
 - One glyph per `commitRitual()` transaction (regardless of sacrifice amount in V1)
 - Minimum sacrifice of 100 $RITUAL required
 - 30-second cooldown between sacrifices (per wallet, enforced on-chain)
-- Glyph is assigned off-chain but deterministically verifiable from the transaction hash
-- Glyphs persist indefinitely in the backend database
-- Glyphs are NOT tokens — they have no economic value and cannot be traded
-- A user's glyph collection is tied to their wallet address
+- **Glyphs are on-chain ERC-1155 NFTs** minted by the EldritchGlyphs contract
+- Tier, rune, and lore are assigned by **Chainlink VRF** (provably fair randomness)
+- Each glyph is a unique token (auto-incrementing `tokenId`, amount=1)
+- Glyphs are **tradeable** — visible in wallets (OpenSea, etc.) and transferable
+- **EIP-2981 royalties**: 5% on all secondary sales, paid to protocol treasury
+- Cult rank reflects **on-chain `glyphCount`** (includes purchased/transferred glyphs)
+- Backend indexes `GlyphMinted` events for leaderboard/metadata; on-chain is source of truth
 
 ### 5.5 V2 Glyph Enhancements (Out of Scope for V1)
 
@@ -433,6 +440,7 @@ These are designed but explicitly not built for launch:
 - Epoch-exclusive glyph variants
 - Fast reveal toggle for power users (after 10+ pulls)
 - Social share integration (one-tap screenshot-to-tweet)
+- On-chain generative art (SVG glyphs rendered in contract)
 
 ---
 
@@ -499,7 +507,7 @@ Provides long-term progression that persists across epochs. While epoch artifact
 - Rank badge appears next to wallet address everywhere it's shown
 - Leaderboard entries show rank badges
 - On rank-up: inline celebration (glow pulse on rank bar, brief text callout)
-- Rank is calculated server-side from glyph count, not stored on-chain in V1
+- Rank is calculated from on-chain `glyphCount(address)` in EldritchGlyphs contract (includes purchased/transferred glyphs)
 
 ---
 
@@ -669,14 +677,13 @@ These features are required for the first epoch to be a great experience:
 - Weighted glyph odds by sacrifice amount
 - Pity system (guaranteed rare after N pulls)
 - Glyph fusion / combination mechanics
-- On-chain glyph minting / attestation
 - Fast reveal toggle
 - DAO governance
 - L2 deployment (contingency only)
 - Mobile native app
 - Token staking / yield
 - Cross-chain bridging
-- On-chain generative art (use off-chain metadata API)
+- On-chain generative art (glyphs use off-chain metadata API; on-chain SVG rendering is V2)
 
 ---
 

@@ -72,22 +72,25 @@ the-summoning/
 │   ├── src/
 │   │   ├── RitualToken.sol
 │   │   ├── BondingCurve.sol
-│   │   ├── SummoningEngine.sol
+│   │   ├── SummoningEngine.sol   # + Chainlink Automation (auto-resolve)
 │   │   ├── ElderArtifacts.sol
+│   │   ├── EldritchGlyphs.sol    # On-chain glyph NFTs (ERC-1155 + VRF + EIP-2981)
 │   │   └── interfaces/
 │   │       ├── IRitualToken.sol
 │   │       ├── IBondingCurve.sol
 │   │       ├── ISummoningEngine.sol
-│   │       └── IElderArtifacts.sol
+│   │       ├── IElderArtifacts.sol
+│   │       └── IEldritchGlyphs.sol
 │   ├── test/
 │   │   ├── RitualToken.t.sol
 │   │   ├── BondingCurve.t.sol
-│   │   ├── SummoningEngine.t.sol
+│   │   ├── SummoningEngine.t.sol  # 71 tests (incl. Automation)
 │   │   ├── ElderArtifacts.t.sol
-│   │   └── Integration.t.sol
+│   │   └── EldritchGlyphs.t.sol   # 32 tests (VRF, tiers, royalties)
 │   ├── script/
 │   │   ├── Deploy.s.sol
-│   │   └── ConfigureEpoch.s.sol
+│   │   ├── DeployWeek2.s.sol
+│   │   └── DeployGlyphs.s.sol     # Deploys EldritchGlyphs + rewires engine
 │   └── lib/                     # forge install dependencies
 │
 ├── backend/                     # Node.js services
@@ -99,15 +102,14 @@ the-summoning/
 │   │   ├── index.ts             # Express + WS server entry
 │   │   ├── config.ts            # Environment config
 │   │   ├── services/
-│   │   │   ├── glyphEngine.ts   # Deterministic glyph assignment
-│   │   │   ├── eventListener.ts # Chain event listener (viem)
-│   │   │   ├── wsManager.ts     # WebSocket session management
-│   │   │   └── leaderboard.ts   # Rank calculation & caching
+│   │   │   ├── glyphMintHandler.ts # Indexes on-chain VRF glyph events
+│   │   │   ├── glyphEngine.ts     # Legacy deterministic assignment (disabled)
+│   │   │   ├── eventListener.ts   # Chain event listener (viem) — engine + glyphs
+│   │   │   ├── epochSync.ts       # Epoch cache hydration + event watching
+│   │   │   ├── wsManager.ts       # WebSocket session management
+│   │   │   └── leaderboard.ts     # Rank calculation & caching
 │   │   ├── api/
-│   │   │   ├── routes.ts
-│   │   │   ├── metadata.ts      # ERC-1155 metadata endpoint
-│   │   │   ├── glyphs.ts        # Glyph collection endpoints
-│   │   │   └── epochs.ts        # Epoch status endpoints
+│   │   │   └── routes.ts          # All REST endpoints
 │   │   ├── db/
 │   │   │   └── queries.ts       # Prisma query helpers
 │   │   └── utils/
@@ -137,10 +139,10 @@ the-summoning/
 │   │   │   ├── AmountSlider.tsx
 │   │   │   └── SacrificeButton.tsx
 │   │   ├── glyph/
-│   │   │   ├── GlyphReveal.tsx  # Full-screen gacha reveal
-│   │   │   ├── GlyphCard.tsx    # Individual glyph display
+│   │   │   ├── GlyphReveal.tsx      # Full-screen gacha reveal
+│   │   │   ├── ChannelingOverlay.tsx # VRF wait animation
 │   │   │   ├── GlyphCollection.tsx
-│   │   │   └── GlyphTierBadge.tsx
+│   │   │   └── GlyphCard.tsx
 │   │   ├── epoch/
 │   │   │   ├── EpochStatus.tsx
 │   │   │   ├── ProgressBar.tsx
@@ -329,164 +331,45 @@ contract BondingCurve is Ownable, ReentrancyGuard {
 
 ### 3.3 SummoningEngine.sol
 
-Core gameplay contract. Manages epoch lifecycle and burns tokens.
+Core gameplay contract. Manages epoch lifecycle, burns tokens, triggers VRF glyph minting,
+and supports Chainlink Automation for auto-resolution.
+
+**Inherits**: `Ownable`, `ReentrancyGuard`, `AutomationCompatibleInterface`
+
+**Key changes from original spec**:
+- Constructor takes 4 params: `(token, artifacts, glyphs, owner)` — `glyphs` is the `IEldritchGlyphs` reference
+- `commitRitual()` calls `glyphs.requestGlyph(msg.sender, epochId)` at the end to trigger VRF
+- Implements `checkUpkeep()` / `performUpkeep()` for Chainlink Automation auto-resolution
+- 71 tests (58 original + 13 Automation)
 
 ```solidity
-// SPDX-License-Identifier: MIT
-pragma solidity ^0.8.24;
+contract SummoningEngine is Ownable, ReentrancyGuard, AutomationCompatibleInterface {
 
-import "@openzeppelin/contracts/access/Ownable.sol";
-import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
-import "./interfaces/IRitualToken.sol";
-import "./interfaces/IElderArtifacts.sol";
-
-contract SummoningEngine is Ownable, ReentrancyGuard {
-
-    // ── Epoch State ──
-    enum EpochPhase { Inactive, Gathering, Ritual, Resolved }
-
-    struct Epoch {
-        uint256 oldOneId;
-        uint256 threshold;           // $RITUAL needed for success
-        uint256 totalCommitted;      // $RITUAL committed so far
-        uint256 gatheringStart;
-        uint256 ritualStart;
-        uint256 ritualEnd;
-        bool successful;
-        bool resolved;
-        uint256 participantCount;
-    }
-
-    // ── Storage ──
     IRitualToken public immutable ritualToken;
     IElderArtifacts public immutable artifacts;
+    IEldritchGlyphs public immutable glyphs;  // On-chain glyph NFT contract
 
-    uint256 public currentEpochId;
-    mapping(uint256 => Epoch) public epochs;
-    mapping(uint256 => mapping(address => uint256)) public contributions;
-    // epochId => contributor addresses (for reward distribution)
-    mapping(uint256 => address[]) internal _contributors;
+    // ... (epoch state unchanged from original spec) ...
 
-    uint256 public constant GATHERING_DURATION = 48 hours;
-    uint256 public constant RITUAL_DURATION = 24 hours;
-    uint256 public constant MIN_SACRIFICE = 100e18;      // 100 $RITUAL minimum
-    uint256 public constant SACRIFICE_COOLDOWN = 30;      // 30 seconds between sacrifices
-    uint256 public constant FAILURE_REDUCTION_BPS = 2000; // 20% threshold reduction on failure
-    uint256 public constant ESCALATION_BPS = 13000;       // 1.3x threshold increase on success
+    constructor(address _token, address _artifacts, address _glyphs, address _owner) Ownable(_owner) { ... }
 
-    mapping(address => uint256) public lastSacrificeTime;
-
-    // ── Events ──
-    event EpochStarted(uint256 indexed epochId, uint256 oldOneId, uint256 threshold, uint256 gatheringStart);
-    event RitualPhaseStarted(uint256 indexed epochId, uint256 ritualStart, uint256 ritualEnd);
-    event RitualSacrifice(
-        uint256 indexed epochId,
-        address indexed wallet,
-        uint256 amount,
-        uint256 totalCommitted
-    );
-    event EpochResolved(uint256 indexed epochId, bool successful, uint256 totalBurned);
-    event RewardClaimed(uint256 indexed epochId, address indexed wallet, uint256 tierId);
-
-    // ── Errors ──
-    error SummoningEngine__InvalidPhase();
-    error SummoningEngine__BelowMinimum();
-    error SummoningEngine__CooldownActive();
-    error SummoningEngine__InsufficientBalance();
-    error SummoningEngine__AlreadyClaimed();
-    error SummoningEngine__EpochNotResolved();
-    error SummoningEngine__ZeroAddress();
-    error SummoningEngine__ZeroThreshold();
-    error SummoningEngine__NoActiveEpoch();
-
-    constructor(
-        address _token,
-        address _artifacts,
-        address _owner
-    ) Ownable(_owner) {
-        if (_token == address(0) || _artifacts == address(0)) revert SummoningEngine__ZeroAddress();
-        ritualToken = IRitualToken(_token);
-        artifacts = IElderArtifacts(_artifacts);
-    }
-
-    // ── Epoch Management (Owner) ──
-
-    /// @notice Start a new epoch. Prior epoch must be resolved (or this is the first epoch).
-    function startEpoch(uint256 oldOneId, uint256 threshold) external onlyOwner {
-        if (threshold == 0) revert SummoningEngine__ZeroThreshold();
-        if (currentEpochId > 0 && !epochs[currentEpochId].resolved) {
-            revert SummoningEngine__InvalidPhase();
-        }
-
-        currentEpochId++;
-        uint256 id = currentEpochId;
-
-        epochs[id] = Epoch({
-            oldOneId: oldOneId,
-            threshold: threshold,
-            totalCommitted: 0,
-            gatheringStart: block.timestamp,
-            ritualStart: block.timestamp + GATHERING_DURATION,
-            ritualEnd: block.timestamp + GATHERING_DURATION + RITUAL_DURATION,
-            successful: false,
-            resolved: false,
-            participantCount: 0
-        });
-
-        emit EpochStarted(id, oldOneId, threshold, block.timestamp);
-    }
-
-    // ── Core Gameplay ──
-
-    /// @notice Commit $RITUAL to the current epoch's summoning ritual.
-    ///         Tokens are burned immediately. Emits event consumed by Glyph Engine.
-    ///         Caller must have approved this contract for at least `amount` $RITUAL.
     function commitRitual(uint256 amount) external nonReentrant {
-        if (currentEpochId == 0) revert SummoningEngine__NoActiveEpoch();
-
-        uint256 id = currentEpochId;
-        Epoch storage epoch = epochs[id];
-
-        // Must be in Ritual phase
-        if (block.timestamp < epoch.ritualStart || block.timestamp >= epoch.ritualEnd) {
-            revert SummoningEngine__InvalidPhase();
-        }
-        if (amount < MIN_SACRIFICE) revert SummoningEngine__BelowMinimum();
-        if (block.timestamp < lastSacrificeTime[msg.sender] + SACRIFICE_COOLDOWN) {
-            revert SummoningEngine__CooldownActive();
-        }
-        if (ritualToken.balanceOf(msg.sender) < amount) revert SummoningEngine__InsufficientBalance();
-
-        // Record cooldown before external call (checks-effects-interactions)
-        lastSacrificeTime[msg.sender] = block.timestamp;
-
-        // Track contribution (first-time contributors added to list)
-        if (contributions[id][msg.sender] == 0) {
-            _contributors[id].push(msg.sender);
-            epoch.participantCount++;
-        }
-        contributions[id][msg.sender] += amount;
-        epoch.totalCommitted += amount;
-
-        // Burn tokens — caller must have approved this contract
-        ritualToken.burnFrom(msg.sender, amount);
-
+        // ... burns tokens, records contribution ...
         emit RitualSacrifice(id, msg.sender, amount, epoch.totalCommitted);
+        glyphs.requestGlyph(msg.sender, id);  // Trigger VRF glyph mint
     }
 
-    /// @notice Resolve the current epoch after ritual phase ends.
-    ///         Permissionless — anyone can call once ritualEnd has passed.
-    ///         In production, Chainlink Automation calls this automatically.
+    // ── Chainlink Automation ──
+    function checkUpkeep(bytes calldata) external view returns (bool upkeepNeeded, bytes memory performData) {
+        // Returns true when active epoch past ritualEnd and not yet resolved
+    }
+
+    function performUpkeep(bytes calldata performData) external {
+        // Resolves the epoch (validates epochId, not resolved, past ritualEnd)
+    }
+
     function resolveEpoch() external {
-        if (currentEpochId == 0) revert SummoningEngine__NoActiveEpoch();
-
-        uint256 id = currentEpochId;
-        Epoch storage epoch = epochs[id];
-
-        if (block.timestamp < epoch.ritualEnd) revert SummoningEngine__InvalidPhase();
-        if (epoch.resolved) revert SummoningEngine__InvalidPhase();
-
-        epoch.resolved = true;
+        // Original permissionless resolution — still works alongside Automation
         epoch.successful = epoch.totalCommitted >= epoch.threshold;
 
         emit EpochResolved(id, epoch.successful, epoch.totalCommitted);
@@ -681,7 +564,32 @@ contract ElderArtifacts is ERC1155, Ownable {
 
 ---
 
-### 3.5 Contract Deployment Order
+### 3.5 EldritchGlyphs.sol
+
+On-chain tradeable glyph NFTs. Each sacrifice mints a unique ERC-1155 glyph via Chainlink VRF.
+
+**Inherits**: `ERC1155`, `VRFConsumerBaseV2Plus`, `ERC2981`, `ReentrancyGuard`
+
+**Key design decisions**:
+- **Tradeable, not soulbound** — enables secondary market and late-joiner participation
+- **EIP-2981 royalties** — 5% on secondary sales to treasury
+- **VRF for fairness** — provably random tier assignment (same cumulative thresholds: 5000/7800/9300/9900/10000)
+- **glyphCount tracking** — `_update()` override tracks per-wallet count on mint/transfer/burn, so cult rank reflects current ownership
+- **Separate from SummoningEngine** — clean separation of concerns; engine calls `requestGlyph()`, VRF callback mints
+
+```solidity
+contract EldritchGlyphs is ERC1155, VRFConsumerBaseV2Plus, ERC2981, ReentrancyGuard {
+    function requestGlyph(address recipient, uint256 epochId) external onlyEngine returns (uint256 requestId);
+    function fulfillRandomWords(uint256 requestId, uint256[] calldata randomWords) internal override;
+    function getGlyphData(uint256 tokenId) external view returns (GlyphData memory);
+    function glyphCount(address wallet) external view returns (uint256);
+    function totalMinted() external view returns (uint256);
+}
+```
+
+**32 tests** covering: VRF fulfillment, tier derivation boundaries, fuzz distribution (1000 samples ±2%), royalty info, glyphCount tracking on transfers, supportsInterface (ERC1155 + ERC2981).
+
+### 3.6 Contract Deployment Order
 
 Deployment must follow this exact sequence:
 
@@ -689,10 +597,14 @@ Deployment must follow this exact sequence:
 1. Deploy RitualToken(ownerMultisig)
 2. Deploy BondingCurve(ritualTokenAddress, ownerMultisig)
 3. Deploy ElderArtifacts(metadataBaseUri, ownerMultisig)
-4. Deploy SummoningEngine(ritualTokenAddress, elderArtifactsAddress, ownerMultisig)
-5. Call RitualToken.setMinter(bondingCurveAddress)
-6. Call ElderArtifacts.setEngine(summoningEngineAddress)
-7. Users must call RitualToken.approve(summoningEngineAddress, MAX_UINT) before committing
+4. Deploy EldritchGlyphs(vrfCoordinator, subscriptionId, keyHash, callbackGasLimit, confirmations, baseURI, royaltyReceiver)
+5. Deploy SummoningEngine(ritualTokenAddress, elderArtifactsAddress, eldritchGlyphsAddress, ownerMultisig)
+6. Call RitualToken.setMinter(bondingCurveAddress)
+7. Call ElderArtifacts.setEngine(summoningEngineAddress)
+8. Call EldritchGlyphs.setEngine(summoningEngineAddress)
+9. Add EldritchGlyphs as VRF consumer on Chainlink subscription
+10. Register SummoningEngine as Chainlink Automation upkeep (for auto-resolution)
+11. Users must call RitualToken.approve(summoningEngineAddress, MAX_UINT) before committing
 ```
 
 ---
@@ -712,21 +624,28 @@ datasource db {
 }
 
 model Glyph {
-  id          String   @id @default(cuid())
-  walletAddr  String   @db.VarChar(42)
-  epochId     Int
-  txHash      String   @db.VarChar(66) @unique
-  tierName    String   // Whisper, Echo, Tremor, Rupture, Breach
-  tierIndex   Int      // 0-4
-  rune        String   // The unicode rune symbol
-  lore        String   // Lore message text
-  amount      String   // $RITUAL burned (stored as string for BigInt)
-  blockNumber Int
-  createdAt   DateTime @default(now())
+  id              String   @id @default(cuid())
+  walletAddr      String   @db.VarChar(42)
+  epochId         Int
+  txHash          String   @db.VarChar(66) @unique // VRF fulfillment tx hash
+  sacrificeTxHash String?  @db.VarChar(66)          // Original sacrifice tx hash
+  tokenId         Int?     @unique                  // On-chain ERC-1155 token ID
+  requestId       String?  @db.VarChar(78)          // VRF request ID
+  status          String   @default("confirmed")    // "pending" | "confirmed"
+  tierName        String   // Whisper, Echo, Tremor, Rupture, Breach
+  tierIndex       Int      // 0-4
+  runeIndex       Int      @default(0) // 0-29, index into RUNE_SHAPES
+  loreIndex       Int      @default(0) // 0-9, index into LORE_MESSAGES
+  rune            String   // Unicode rune symbol (derived from runeIndex)
+  lore            String   // Lore message text (derived from loreIndex)
+  amount          String   // $RITUAL burned (stored as string for BigInt)
+  blockNumber     Int
+  createdAt       DateTime @default(now())
 
   @@index([walletAddr])
   @@index([epochId])
   @@index([tierIndex])
+  @@index([status])
 }
 
 model CultRank {
@@ -753,143 +672,55 @@ model EpochCache {
 
 ---
 
-### 4.2 Glyph Engine
+### 4.2 Glyph Mint Handler (Event-Driven VRF Indexer)
 
-The core service that assigns glyphs deterministically from burn transactions.
+Glyphs are now **minted on-chain** by the EldritchGlyphs contract via Chainlink VRF.
+The backend is an event indexer and real-time delivery layer — it no longer assigns tiers.
 
-```typescript
-// backend/src/utils/glyphRoll.ts
-
-import { keccak256, toHex } from 'viem';
-
-// Tier definitions — MUST match frontend constants
-export const GLYPH_TIERS = [
-  { name: 'Whisper',  index: 0, chance: 0.50, color: '#8B8B8B' },
-  { name: 'Echo',     index: 1, chance: 0.28, color: '#4A9EFF' },
-  { name: 'Tremor',   index: 2, chance: 0.15, color: '#A855F7' },
-  { name: 'Rupture',  index: 3, chance: 0.06, color: '#F59E0B' },
-  { name: 'Breach',   index: 4, chance: 0.01, color: '#EF4444' },
-] as const;
-
-export const RUNE_SHAPES = [
-  '◈','◇','⬡','△','▽','⬢','◆','⬠','☍','⚝',
-  '✧','⊛','⊕','⊗','⊘','⊙','⊚','⊜','⊡','⊞',
-  '᛭','ᚦ','ᚠ','ᚢ','ᚨ','ᚱ','ᚲ','ᚷ','ᚹ','ᛃ',
-];
-
-export const LORE_MESSAGES = [
-  'The void stirs...',
-  'Something ancient takes notice.',
-  'The veil grows thin.',
-  'Whispers from beyond the stars.',
-  'The geometry of space bends.',
-  'Dead dreams ripple outward.',
-  'The sleeping one shifts.',
-  'Reality fractures, just slightly.',
-  'The darkness between stars pulses.',
-  'An eye opens in the deep.',
-];
-
-/**
- * Deterministic glyph assignment from a transaction hash.
- * Anyone can independently verify this by running the same function
- * on the same txHash — the result is always the same.
- */
-export function rollGlyphFromTxHash(txHash: string) {
-  // Use keccak256 of txHash as seed for tier selection
-  const seed = keccak256(txHash as `0x${string}`);
-  const seedNum = BigInt(seed);
-
-  // Tier roll: use first 8 bytes as a fraction of max uint64
-  const tierRoll = Number(seedNum % 10000n) / 10000; // 0.0000 - 0.9999
-  let tier = GLYPH_TIERS[0];
-  let cumulative = 0;
-  for (const t of GLYPH_TIERS) {
-    cumulative += t.chance;
-    if (tierRoll < cumulative) {
-      tier = t;
-      break;
-    }
-  }
-
-  // Rune selection: use next 8 bytes
-  const runeIndex = Number((seedNum >> 64n) % BigInt(RUNE_SHAPES.length));
-  const rune = RUNE_SHAPES[runeIndex];
-
-  // Lore selection: use next 8 bytes
-  const loreIndex = Number((seedNum >> 128n) % BigInt(LORE_MESSAGES.length));
-  const lore = LORE_MESSAGES[loreIndex];
-
-  return {
-    tierName: tier.name,
-    tierIndex: tier.index,
-    color: tier.color,
-    rune,
-    lore,
-  };
-}
-```
+**Flow**: `commitRitual()` → SummoningEngine calls `glyphs.requestGlyph()` → Chainlink VRF
+callback mints ERC-1155 → backend indexes `GlyphMinted` event → persists + pushes via WebSocket.
 
 ```typescript
-// backend/src/services/glyphEngine.ts
+// backend/src/services/glyphMintHandler.ts
 
-import { PrismaClient } from '@prisma/client';
-import { rollGlyphFromTxHash } from '../utils/glyphRoll';
-import { wsManager } from './wsManager';
-import { updateCultRank } from './leaderboard';
-
-const prisma = new PrismaClient();
-
-interface RitualSacrificeEvent {
+type GlyphRequestedEvent = {
+  requestId: bigint;
+  recipient: string;
   epochId: number;
-  wallet: string;
-  amount: bigint;
+};
+
+type GlyphMintedEvent = {
+  tokenId: number;
+  recipient: string;
+  tier: number;       // 0-4, from VRF
+  runeIndex: number;  // 0-29, from VRF
+  loreIndex: number;  // 0-9, from VRF
+  epochId: number;
   txHash: string;
   blockNumber: number;
+};
+
+// GlyphRequested → push "glyph_pending" (channeling UX during VRF wait)
+async function handleGlyphRequested(event: GlyphRequestedEvent): Promise<void> {
+  wsManager.sendToWallet(wallet, {
+    type: "glyph_pending",
+    data: { requestId, epochId, timestamp: Date.now() },
+  });
 }
 
-export async function processRitualSacrifice(event: RitualSacrificeEvent) {
-  // 1. Check for duplicate (idempotency via unique txHash)
-  const existing = await prisma.glyph.findUnique({
-    where: { txHash: event.txHash },
-  });
-  if (existing) return existing;
-
-  // 2. Roll glyph deterministically
-  const roll = rollGlyphFromTxHash(event.txHash);
-
-  // 3. Persist to database
-  const glyph = await prisma.glyph.create({
-    data: {
-      walletAddr: event.wallet.toLowerCase(),
-      epochId: event.epochId,
-      txHash: event.txHash,
-      tierName: roll.tierName,
-      tierIndex: roll.tierIndex,
-      rune: roll.rune,
-      lore: roll.lore,
-      amount: event.amount.toString(),
-      blockNumber: event.blockNumber,
-    },
-  });
-
-  // 4. Update cult rank
-  await updateCultRank(event.wallet.toLowerCase());
-
-  // 5. Push to user via WebSocket
-  wsManager.sendToWallet(event.wallet.toLowerCase(), {
-    type: 'glyph_reveal',
-    data: {
-      ...roll,
-      txHash: event.txHash,
-      amount: event.amount.toString(),
-      epochId: event.epochId,
-    },
-  });
-
-  return glyph;
+// GlyphMinted → persist to DB, update cult rank, push "glyph_reveal"
+async function handleGlyphMinted(event: GlyphMintedEvent): Promise<void> {
+  // Idempotency check by tokenId
+  // Upsert: if pending record exists (by requestId), update it; otherwise create new
+  // Tier/rune/lore resolved from on-chain indices via shared constants
+  // Calls updateCultRank(wallet) after persist
+  // Pushes glyph_reveal via wsManager
 }
 ```
+
+**Legacy**: `glyphRoll.ts` and `glyphEngine.ts` still exist for reference but are no longer
+called in the active pipeline. The `RitualSacrifice` event listener now only broadcasts
+`epoch_update` progress via WebSocket — it does not create glyphs.
 
 ---
 
@@ -1046,9 +877,12 @@ export const wsManager = new WSManager();
 ### 4.6 REST API Endpoints
 
 ```
-GET  /api/metadata/:tokenId        → ERC-1155 JSON metadata
-GET  /api/glyphs/:wallet           → Glyph collection for a wallet
+GET  /api/glyphs/:wallet           → Confirmed glyph collection for a wallet (status: "confirmed" only)
+GET  /api/glyphs/:wallet/pending   → Pending VRF glyph requests (status: "pending")
 GET  /api/glyphs/:wallet/summary   → Tier counts + rank for a wallet
+GET  /api/metadata/artifact/:tokenId → ERC-1155 metadata for ElderArtifacts (epoch rewards)
+GET  /api/metadata/glyph/:tokenId  → ERC-1155 metadata for EldritchGlyphs (on-chain glyphs)
+GET  /api/metadata/:tokenId        → Legacy alias for /api/metadata/artifact/:tokenId
 GET  /api/epochs/current           → Current epoch state + progress
 GET  /api/epochs/:epochId          → Historical epoch data
 GET  /api/leaderboard              → Top contributors + rank holders
@@ -1056,7 +890,7 @@ GET  /api/leaderboard/glyphs       → Top glyph collectors
 GET  /health                       → Health check
 ```
 
-**Metadata endpoint** (`/api/metadata/:tokenId`):
+**Artifact metadata endpoint** (`/api/metadata/artifact/:tokenId`):
 - Token ID decoded as `epochId * 1000 + tierId`
 - Old One name resolved dynamically from `EpochCache.oldOneId` → `OLD_ONES` constant
   (defined in `backend/src/utils/constants.ts`), with fallback to Cthulhu
@@ -1072,6 +906,24 @@ GET  /health                       → Health check
     { "trait_type": "Old One", "value": "Cthulhu" },
     { "trait_type": "Tier", "value": "Harbinger" },
     { "trait_type": "Tier ID", "value": 1 }
+  ]
+}
+```
+
+**Glyph metadata endpoint** (`/api/metadata/glyph/:tokenId`):
+- Looks up glyph record by `tokenId` in Prisma
+- Returns tier, rune, lore resolved from on-chain indices via shared constants
+- Used by OpenSea and other marketplaces for EldritchGlyphs NFT display
+
+```json
+{
+  "name": "Eldritch Glyph #42 — Tremor",
+  "description": "The geometry of space bends.",
+  "image": "https://api.thesummoning.xyz/images/glyphs/42.png",
+  "attributes": [
+    { "trait_type": "Tier", "value": "Tremor" },
+    { "trait_type": "Rune", "value": "ᚦ" },
+    { "trait_type": "Epoch", "value": 1 }
   ]
 }
 ```
@@ -1129,10 +981,10 @@ export async function updateCultRank(wallet: string) {
 
 | State Type | Tool | Examples |
 |-----------|------|---------|
-| Server/chain state | wagmi + @tanstack/react-query | Token balance, epoch data, contract reads |
-| WebSocket events | zustand (glyphStore) | Incoming glyph reveals, collection |
-| UI state | zustand (uiStore) | Active tab, reveal modal open, animation phase |
-| Form state | React useState | Sacrifice amount slider value |
+| Server/chain state | wagmi + @tanstack/react-query | Token balance, epoch data, contract reads, on-chain glyphCount |
+| WebSocket events | zustand (glyphStore) | Incoming glyph reveals, collection, pending VRF requests |
+| UI state | zustand (uiStore) | Active tab, reveal modal open, animation phase, portal shake |
+| Form state | React useState | Sacrifice amount input value |
 
 ### 5.2 Key Component Specifications
 
@@ -1154,10 +1006,11 @@ export async function updateCultRank(wallet: string) {
 - Tier-specific effects: Tremor+ get expanded glow radius, Rupture/Breach get screen shake
 
 #### SacrificePanel.tsx
-- Amount slider (range input, 100 to min(balance, 25000))
-- Quick-select buttons: 1K, 5K, 10K, 25K
-- Sacrifice button triggers: `approve()` (if needed) → `commitRitual()` → listen for WS glyph
-- Button states: idle, approving, channeling, disabled (insufficient balance / cooldown)
+- Amount input field with quick-select buttons: 100, 500, 1000 $RITUAL
+- Checks allowance → prompts `approve()` if needed → calls `commitRitual(amount)`
+- Button states: "APPROVE & SACRIFICE" / "CONFIRM IN WALLET..." / "SACRIFICING..." / "SACRIFICE ACCEPTED"
+- Only visible during Ritual phase (hidden during Gathering, Resolved, Inactive)
+- After success, shows "VRF requested — channeling your glyph..." while ChannelingOverlay takes over
 
 #### GlyphCollection.tsx
 - CSS Grid: `repeat(auto-fill, minmax(52px, 1fr))`
@@ -1173,8 +1026,16 @@ export async function updateCultRank(wallet: string) {
 - Phase-dependent display: Gathering shows "Ritual begins in", Ritual shows "Ritual ends in", Resolved shows success/failure badge
 - Shows portal stage name and participant count
 
+#### ChannelingOverlay.tsx
+- Full-screen overlay shown while waiting for Chainlink VRF callback (~30-60s)
+- Displays spinning channeling symbol, rotating lore messages, "AWAITING VRF CALLBACK..." status
+- Visibility controlled by `useGlyphStore().pendingGlyphs` — shows when array is non-empty
+- Dismissed automatically when `glyph_reveal` WebSocket message arrives
+
 #### CultRankBar.tsx
-- Reads glyph count from `glyphStore`, calculates current/next rank
+- Uses `useCultRank` hook — reads `glyphCount(address)` from EldritchGlyphs contract on-chain
+- Falls back to glyphStore count if contract not configured
+- On-chain count includes purchased/transferred glyphs, not just earned ones
 - Segmented progress bar — one segment per rank tier, filled proportionally
 - Color-coded rank name, "X glyphs to [Next Rank]" label
 
@@ -1202,8 +1063,9 @@ The real-time glyph pipeline is split into two pieces:
 
 **`WebSocketProvider.tsx`** (context provider, mounted in `layout.tsx`):
 - Manages the WS connection lifecycle per wallet address.
-- On `onopen`: sends `{ type: 'auth', wallet }` and immediately fetches `/api/glyphs/:wallet` via REST to catch any glyphs that arrived while disconnected.
-- On `glyph_reveal` message: calls `setRevealGlyph(msg.data)` to trigger the reveal modal.
+- On `onopen`: sends `{ type: 'auth', wallet }`, fetches `/api/glyphs/:wallet` via REST to catch missed glyphs, and fetches `/api/glyphs/:wallet/pending` to restore channeling state.
+- On `glyph_pending` message: adds to `pendingGlyphs` in glyphStore (triggers ChannelingOverlay).
+- On `glyph_reveal` message: removes from `pendingGlyphs`, calls `setRevealGlyph(msg.data)` to trigger reveal modal.
 - Auto-reconnects after 3 seconds on close.
 - Closes connection on wallet disconnect.
 
@@ -1274,35 +1136,42 @@ wagmi's `useReadContract`, not from the backend REST API. This is a deliberate d
 ### 6.1 Sacrifice → Glyph Reveal (End-to-End)
 
 ```
-User clicks "Perform Sacrifice"
+User clicks "SACRIFICE" in SacrificePanel
    │
-   ├─→ Frontend: Check approval (wagmi readContract)
+   ├─→ Frontend: Check allowance (wagmi readContract)
    │     └─ If not approved: prompt approve() tx first
    │
    ├─→ Frontend: Call commitRitual(amount) via wagmi writeContract
-   │     └─ UI state: "Channeling..."
+   │     └─ UI state: "SACRIFICING..."
    │
    ├─→ Ethereum: Transaction included in block
    │     ├─ RitualToken.burnFrom() executes
-   │     └─ SummoningEngine emits RitualSacrifice event
+   │     ├─ SummoningEngine emits RitualSacrifice event
+   │     └─ SummoningEngine calls glyphs.requestGlyph(wallet, epochId)
+   │         └─ EldritchGlyphs requests Chainlink VRF → emits GlyphRequested
    │
-   ├─→ Backend: Event Listener (viem watchEvent) picks up log
-   │     └─ Calls glyphEngine.processRitualSacrifice()
-   │         ├─ rollGlyphFromTxHash(txHash) → deterministic tier + rune
-   │         ├─ Prisma: Insert glyph record
-   │         ├─ updateCultRank(wallet)
-   │         └─ wsManager.sendToWallet(wallet, glyphData)
+   ├─→ Backend: Event Listener picks up GlyphRequested
+   │     └─ Pushes "glyph_pending" via WebSocket
+   │         └─ Frontend: ChannelingOverlay appears ("AWAITING VRF CALLBACK...")
+   │
+   ├─→ Chainlink VRF: Off-chain node generates random word, calls fulfillRandomWords()
+   │     └─ EldritchGlyphs: Mints ERC-1155 glyph NFT → emits GlyphMinted
+   │
+   ├─→ Backend: Event Listener picks up GlyphMinted
+   │     ├─ Upserts glyph record in Prisma (status: "confirmed")
+   │     ├─ updateCultRank(wallet)
+   │     └─ Pushes "glyph_reveal" via WebSocket
    │
    ├─→ Frontend: WebSocket receives 'glyph_reveal' message
-   │     └─ zustand: setRevealGlyph(data)
-   │         └─ GlyphReveal component mounts → 4-phase animation plays
+   │     ├─ Removes from pendingGlyphs → ChannelingOverlay dismissed
+   │     └─ zustand: setRevealGlyph(data) → GlyphReveal 4-phase animation
    │
    └─→ User taps to dismiss
-         └─ Glyph added to collection grid
-         └─ Cult rank bar updates
+         └─ Glyph added to collection grid (now an on-chain NFT)
+         └─ Cult rank bar updates (reads on-chain glyphCount)
 ```
 
-**Target latency**: Block confirmation (~12s) + event indexing (~1s) + WebSocket push (~0.1s) = **~13 seconds** from button click to glyph reveal start. The "Channeling..." animation fills this gap.
+**Target latency**: Block confirmation (~12s) + VRF callback (~30-60s) + event indexing (~1s) + WebSocket push (~0.1s) = **~45-75 seconds** from button click to glyph reveal start. The ChannelingOverlay fills this VRF wait with thematic lore text and animations.
 
 ### 6.2 Epoch Lifecycle Flow
 
@@ -1321,7 +1190,9 @@ Owner calls startEpoch(oldOneId, threshold)
    │     └─ Backend: Broadcasts epoch_update via WebSocket on each sacrifice
    │
    ├─→ Resolution  [block.timestamp >= ritualEnd]
-   │     ├─ Chainlink Automation (or owner) calls resolveEpoch()
+   │     ├─ Chainlink Automation calls performUpkeep() automatically
+   │     │   (checkUpkeep returns true when ritualEnd passed + not resolved)
+   │     │   Falls back to permissionless resolveEpoch() if Automation fails
    │     ├─ Contract: Compares totalCommitted vs threshold
    │     │   ├─ Success: epoch.successful = true
    │     │   └─ Failure: epoch.successful = false
@@ -1343,15 +1214,20 @@ Owner calls startEpoch(oldOneId, threshold)
 contracts/test/
 ├── RitualToken.t.sol        # Mint, burn, access control
 ├── BondingCurve.t.sol       # Price curve math, fee extraction, slippage
-├── SummoningEngine.t.sol    # Full epoch lifecycle, contributions, rewards
-├── ElderArtifacts.t.sol     # Minting, token IDs, URI generation
+├── SummoningEngine.t.sol    # Full epoch lifecycle, contributions, rewards, Automation (71 tests)
+├── ElderArtifacts.t.sol     # Minting, token IDs, URI generation (36 tests)
+├── EldritchGlyphs.t.sol     # VRF flow, tier distribution, royalties, transfers (85 tests)
 └── Integration.t.sol        # Full flow: mint → sacrifice → resolve → claim
 ```
 
+**Total: 178 tests across 5 suites** (as of Step 27).
+
 **Coverage targets**:
 - 100% branch coverage on BondingCurve (holds treasury)
-- 100% branch coverage on SummoningEngine (core gameplay)
+- 100% branch coverage on SummoningEngine (core gameplay + Automation)
+- 100% branch coverage on EldritchGlyphs (VRF + minting + royalties)
 - Fuzz testing on BondingCurve.mint() for edge cases in math
+- Fuzz testing on EldritchGlyphs: 10,000 random VRF seeds → tier distribution within ±2% of 50/28/15/6/1
 - Invariant: `protocolFees + curveReserve == total ETH received`
 - Invariant: `totalBurned <= totalMinted` for RitualToken
 
@@ -1365,6 +1241,9 @@ contracts/test/
 - Claim reward → correct tier assignment and ERC-1155 token ID
 - Double claim reverts
 - Fee withdrawal by owner → correct ETH amount
+- Chainlink Automation: checkUpkeep returns correct states for each phase, performUpkeep resolves epoch
+- EldritchGlyphs: VRF request → callback → mint, only engine can request, royaltyInfo returns 5%
+- EldritchGlyphs: transfer updates glyphCount for both sender and receiver
 
 ### 7.2 Backend Tests
 
@@ -1531,9 +1410,14 @@ Step 24: Leaderboard.tsx — fetches /api/leaderboard, shows rank          ✅
          position, wallet, cult rank (color-coded), glyph count.
          Highlights connected wallet row. CultRankBar wired into
          page.tsx below GlyphCollection.
-Step 25: Mobile responsive pass on all components
-Step 26: Implement Chainlink VRF integration in SummoningEngine
-Step 27: Implement Chainlink Automation for auto-resolution
+Step 25: Mobile responsive pass — all components use sm:/md: breakpoints   ✅
+Step 26: On-chain glyphs via Chainlink VRF — EldritchGlyphs.sol contract   ✅
+         + ERC-1155 + EIP-2981 royalties (5%) + glyphMintHandler backend
+         + ChannelingOverlay + SacrificePanel + useCultRank on-chain hook
+         + 85 EldritchGlyphs tests (incl. 10K-seed fuzz). Deployed to Sepolia.
+Step 27: Chainlink Automation — checkUpkeep/performUpkeep on               ✅
+         SummoningEngine for auto epoch resolution. 13 Automation tests.
+         178 total tests across 5 suites. Deployed to Sepolia.
 Step 28: Deploy subgraph to The Graph Studio
 Step 29: Full integration test on Sepolia: complete epoch lifecycle
 ```
