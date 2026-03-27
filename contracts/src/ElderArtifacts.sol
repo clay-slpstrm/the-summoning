@@ -115,6 +115,6 @@ contract ElderArtifacts is ERC1155, Ownable, IElderArtifacts {
     ///         Example: https://api.thesummoning.xyz/metadata/1001
     ///         The backend returns JSON dynamically based on epochId + tierId.
     function uri(uint256 tokenId) public view override returns (string memory) {
-        return string(abi.encodePacked(baseURI, Strings.toString(tokenId)));
+        return string.concat(baseURI, Strings.toString(tokenId));
     }
 }
