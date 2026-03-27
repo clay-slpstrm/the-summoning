@@ -193,6 +193,16 @@ contract EldritchGlyphsTest is Test {
         assertTrue(fulfilled);
     }
 
+    function test_Fulfill_RevertsOnDoubleFulfill() public {
+        vm.prank(engine);
+        uint256 requestId = glyphs.requestGlyph(alice, 1);
+        vrfCoordinator.fulfillRandomWords(requestId, address(glyphs));
+
+        // Second fulfillment should revert (fulfilled flag is checked)
+        vm.expectRevert();
+        vrfCoordinator.fulfillRandomWords(requestId, address(glyphs));
+    }
+
     function test_Fulfill_EmitsGlyphMinted() public {
         vm.prank(engine);
         uint256 requestId = glyphs.requestGlyph(alice, 1);

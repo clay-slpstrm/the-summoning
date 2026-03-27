@@ -71,6 +71,7 @@ contract SummoningEngine is Ownable, ReentrancyGuard, AutomationCompatibleInterf
     );
     event EpochResolved(uint256 indexed epochId, bool successful, uint256 totalBurned);
     event RewardClaimed(uint256 indexed epochId, address indexed wallet, uint256 tierId);
+    event GlyphRequestFailed(uint256 indexed epochId, address indexed wallet, bytes reason);
 
     // ── Errors ───────────────────────────────────────────────────────────────
 
@@ -171,8 +172,10 @@ contract SummoningEngine is Ownable, ReentrancyGuard, AutomationCompatibleInterf
 
         emit RitualSacrifice(id, msg.sender, amount, epoch.totalCommitted);
 
-        // Request glyph mint via Chainlink VRF
-        glyphs.requestGlyph(msg.sender, id);
+        // Request glyph mint via Chainlink VRF — non-blocking so VRF outage doesn't halt sacrifices
+        try glyphs.requestGlyph(msg.sender, id) {} catch (bytes memory reason) {
+            emit GlyphRequestFailed(id, msg.sender, reason);
+        }
     }
 
     /// @notice Resolve the current epoch after the ritual window closes.

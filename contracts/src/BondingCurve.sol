@@ -62,6 +62,10 @@ contract BondingCurve is Ownable, ReentrancyGuard {
     // ── Mutative ───────────────────────────────────────────────────────────
 
     /// @notice Mint $RITUAL tokens by sending ETH. Slippage protected via minTokens.
+    /// @dev Uses the integral of the linear price function to compute tokens out:
+    ///      price(s) = BASE_PRICE * (1 + s / SCALE_FACTOR), where s = supply in whole tokens.
+    ///      ETH cost for minting from s₀ to s₁ = BASE_PRICE * ((s₁ - s₀) + (s₁² - s₀²) / (2 * SCALE_FACTOR))
+    ///      Solving for s₁ given netEth yields a quadratic; we use the quadratic formula.
     /// @param minTokens Minimum tokens to receive; reverts if actual output is less.
     function mint(uint256 minTokens) external payable nonReentrant {
         if (msg.value == 0) revert BondingCurve__InsufficientPayment();
@@ -70,10 +74,7 @@ contract BondingCurve is Ownable, ReentrancyGuard {
         uint256 netEth = msg.value - fee;
         protocolFees += fee;
 
-        // Spot-price approximation: tokens = netEth / currentPrice
-        uint256 supply = ritualToken.totalSupply() / 1e18;
-        uint256 price = BASE_PRICE + (BASE_PRICE * supply / SCALE_FACTOR);
-        uint256 tokensOut = netEth * 1e18 / price;
+        uint256 tokensOut = _calcTokensOut(netEth);
 
         if (tokensOut < minTokens) revert BondingCurve__SlippageExceeded();
 
@@ -83,12 +84,47 @@ contract BondingCurve is Ownable, ReentrancyGuard {
 
     /// @notice Owner withdraws accumulated protocol fees.
     /// @param to Recipient address.
-    function withdrawFees(address to) external onlyOwner {
+    function withdrawFees(address to) external onlyOwner nonReentrant {
         if (to == address(0)) revert BondingCurve__ZeroAddress();
         uint256 amount = protocolFees;
+        if (amount == 0) revert BondingCurve__InsufficientPayment();
         protocolFees = 0;
         (bool ok,) = to.call{ value: amount }("");
         if (!ok) revert BondingCurve__WithdrawFailed();
         emit FeesWithdrawn(to, amount);
+    }
+
+    // ── Internal ────────────────────────────────────────────────────────────
+
+    /// @dev Solve for tokensOut given netEth using the integral of the linear price curve.
+    ///      price(s) = BASE_PRICE * (1 + s / SCALE_FACTOR)
+    ///      Integral from s₀ to s₁: BASE_PRICE * [(s₁ - s₀) + (s₁² - s₀²) / (2 * SF)]
+    ///      Let d = s₁ - s₀ (tokens out in whole units). Substituting s₁ = s₀ + d:
+    ///      netEth = BASE_PRICE * [d + d*(2*s₀ + d) / (2*SF)]
+    ///      Multiply through: netEth * 2 * SF = BASE_PRICE * d * (2*SF + 2*s₀ + d)
+    ///      Rearrange: d² + (2*SF + 2*s₀)*d - (2*SF*netEth/BASE_PRICE) = 0
+    ///      Quadratic formula: d = [-b + sqrt(b² + 4*c)] / 2  where b = 2*SF + 2*s₀, c = 2*SF*netEth/BASE_PRICE
+    function _calcTokensOut(uint256 netEth) internal view returns (uint256) {
+        uint256 s0 = ritualToken.totalSupply() / 1e18; // current supply in whole tokens
+        uint256 b = 2 * SCALE_FACTOR + 2 * s0;
+        uint256 c = 2 * SCALE_FACTOR * netEth / BASE_PRICE;
+
+        // d = (-b + sqrt(b² + 4c)) / 2
+        uint256 discriminant = b * b + 4 * c;
+        uint256 sqrtDisc = _sqrt(discriminant);
+        uint256 dWhole = (sqrtDisc - b) / 2;
+
+        return dWhole * 1e18;
+    }
+
+    /// @dev Integer square root via Newton's method (Babylonian).
+    function _sqrt(uint256 x) internal pure returns (uint256 y) {
+        if (x == 0) return 0;
+        y = x;
+        uint256 z = (y + 1) / 2;
+        while (z < y) {
+            y = z;
+            z = (x / z + z) / 2;
+        }
     }
 }

@@ -48,6 +48,12 @@ contract RitualTokenTest is Test {
         token.setMinter(minter);
     }
 
+    function test_SetMinter_RevertsIfZeroAddress() public {
+        vm.prank(owner);
+        vm.expectRevert(RitualToken.ZeroAddress.selector);
+        token.setMinter(address(0));
+    }
+
     function test_SetMinter_RevertsIfAlreadySet() public {
         vm.startPrank(owner);
         token.setMinter(minter);

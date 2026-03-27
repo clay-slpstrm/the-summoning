@@ -156,6 +156,7 @@ contract EldritchGlyphs is ERC1155, VRFConsumerBaseV2Plus, ERC2981, IEldritchGly
     function fulfillRandomWords(uint256 requestId, uint256[] calldata randomWords) internal override {
         PendingGlyph storage pending = pendingGlyphs[requestId];
         if (pending.recipient == address(0)) revert EldritchGlyphs__RequestNotFound();
+        if (pending.fulfilled) revert EldritchGlyphs__RequestNotFound(); // Already fulfilled
 
         pending.fulfilled = true;
         uint256 seed = randomWords[0];

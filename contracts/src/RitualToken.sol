@@ -13,6 +13,7 @@ contract RitualToken is ERC20, ERC20Burnable, Ownable {
 
     error OnlyMinter();
     error MinterAlreadySet();
+    error ZeroAddress();
 
     event MinterSet(address indexed minter);
 
@@ -26,6 +27,7 @@ contract RitualToken is ERC20, ERC20Burnable, Ownable {
     /// @notice Set the minter address. Can only be called once by owner.
     /// @param _minter The BondingCurve contract address.
     function setMinter(address _minter) external onlyOwner {
+        if (_minter == address(0)) revert ZeroAddress();
         if (minter != address(0)) revert MinterAlreadySet();
         minter = _minter;
         emit MinterSet(_minter);
