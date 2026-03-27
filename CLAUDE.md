@@ -185,23 +185,28 @@ Buttons: bg gradient(135deg, #4c1d95, #7c3aed), uppercase, tracking-widest, seri
 
 ## Critical Implementation Notes
 
-1. **Glyph assignment is deterministic**: `keccak256(txHash)` → tier + rune + lore. Same tx always produces the same glyph. This is the foundation of the trust model.
+1. **Glyphs are on-chain ERC-1155 NFTs** minted by the EldritchGlyphs contract via **Chainlink VRF**. Tier, rune, and lore are provably fair random assignments. The backend is an event indexer — it does NOT assign glyphs. The old `keccak256(txHash)` system has been replaced.
 
-2. **The glyph reveal animation is the most important UX element**. It must feel dramatic for rare tiers and fast for common tiers. Target: ~2.5s for Whisper/Echo, ~4s for Tremor+. See PRD.md Section 4.4 for full timing spec.
+2. **VRF resilience**: `commitRitual()` wraps `glyphs.requestGlyph()` in a try/catch. If VRF is down (e.g., LINK depleted), the sacrifice still succeeds (tokens burned, contribution recorded) but no glyph is minted. A `GlyphRequestFailed` event is emitted for the backend to detect.
 
-3. **Users must approve() the SummoningEngine before their first sacrifice**. Handle this gracefully — check allowance, prompt approval if needed, then proceed to sacrifice.
+3. **BondingCurve uses integral pricing**: `mint()` solves the quadratic formula over the price curve integral, not a spot price. This prevents large mints from underpaying. `getEstimatedCost()` uses a trapezoidal approximation for frontend previews.
 
-4. **WebSocket reconnection**: If WS disconnects, query `/api/glyphs/:wallet` on reconnect to catch any missed glyphs.
+4. **The glyph reveal animation is the most important UX element**. The VRF wait (~30-60s) is covered by the ChannelingOverlay. The GlyphReveal animation fires on the `glyph_reveal` WebSocket message. Target: ~2.5s for Whisper/Echo, ~4s for Tremor+. See PRD.md Section 4.4 for full timing spec.
 
-5. **Portal state is shared**: All users see the same portal progression. It's derived from `totalCommitted / threshold` for the current epoch.
+5. **Users must approve() the SummoningEngine before their first sacrifice**. The SacrificePanel handles this — checks allowance, prompts approval if needed, then proceeds to sacrifice.
 
-6. **Gas costs are near zero**: At 0.03 gwei, a sacrifice costs ~$0.006. Don't show gas warnings unless price spikes above 5 gwei.
+6. **WebSocket reconnection**: If WS disconnects, query `/api/glyphs/:wallet` and `/api/glyphs/:wallet/pending` on reconnect to catch missed glyphs and restore channeling state.
+
+7. **Portal state is shared**: All users see the same portal progression. It's derived from `totalCommitted / threshold` for the current epoch.
+
+8. **Gas costs are near zero**: At 0.03 gwei, a sacrifice costs ~$0.006. Don't show gas warnings unless price spikes above 5 gwei.
 
 ## Testing Requirements
 
-- Contracts: 100% branch coverage on BondingCurve and SummoningEngine
-- Backend: Determinism test — 10,000 random hashes, verify distribution matches target rates ±2%
-- Backend: Idempotency test — processing same event twice must not create duplicate glyphs
+- Contracts: 183 tests across 5 suites, all passing with 10,000 fuzz runs
+- Contracts: 100% branch coverage on BondingCurve, SummoningEngine, and EldritchGlyphs
+- Contracts: Fuzz test on EldritchGlyphs tier distribution — 10,000 VRF seeds, ±2% of 50/28/15/6/1
+- Backend: Idempotency test — processing same GlyphMinted event twice must not create duplicate glyphs
 - Frontend: Portal renders correctly at 0%, 25%, 50%, 75%, 95% progress
 
 ## Build Order

@@ -285,7 +285,9 @@ contract BondingCurve is Ownable, ReentrancyGuard {
     }
 
     /// @notice Mint $RITUAL tokens by sending ETH. Slippage protection via minTokens.
-    /// @param minTokens Minimum tokens to receive, reverts if output is less
+    /// @dev Uses the integral of the linear price function (quadratic formula) to compute
+    ///      tokens out fairly across the entire mint range. Large mints pay the correct
+    ///      cumulative price, preventing whale underpayment.
     function mint(uint256 minTokens) external payable nonReentrant {
         if (msg.value == 0) revert InsufficientPayment();
 
@@ -293,11 +295,7 @@ contract BondingCurve is Ownable, ReentrancyGuard {
         uint256 netEth = msg.value - fee;
         protocolFees += fee;
 
-        // Calculate tokens: tokens = netEth / currentPrice (simplified spot price)
-        // Supply normalized to whole tokens to match SCALE_FACTOR unit (100M tokens)
-        uint256 supply = ritualToken.totalSupply() / 1e18;
-        uint256 price = BASE_PRICE + (BASE_PRICE * supply / SCALE_FACTOR);
-        uint256 tokensOut = netEth * 1e18 / price;
+        uint256 tokensOut = _calcTokensOut(netEth);
 
         if (tokensOut < minTokens) revert SlippageExceeded();
 
@@ -306,26 +304,32 @@ contract BondingCurve is Ownable, ReentrancyGuard {
     }
 
     /// @notice Owner withdraws accumulated protocol fees
-    function withdrawFees(address to) external onlyOwner {
+    function withdrawFees(address to) external onlyOwner nonReentrant {
+        if (to == address(0)) revert BondingCurve__ZeroAddress();
         uint256 amount = protocolFees;
+        if (amount == 0) revert InsufficientPayment();
         protocolFees = 0;
         (bool ok, ) = to.call{value: amount}("");
         if (!ok) revert WithdrawFailed();
         emit FeesWithdrawn(to, amount);
     }
 
-    receive() external payable {}
+    /// @dev Solve for tokensOut given netEth using the integral of the linear price curve.
+    ///      Quadratic: d² + (2*SF + 2*s₀)*d - (2*SF*netEth/BASE_PRICE) = 0
+    ///      Solved via: d = (-b + sqrt(b² + 4c)) / 2
+    function _calcTokensOut(uint256 netEth) internal view returns (uint256);
+    function _sqrt(uint256 x) internal pure returns (uint256);
 }
 ```
 
 **Key decisions**:
 - Price is a linear function of supply: `BASE_PRICE * (1 + supply / 100M)`.
+- `mint()` uses **integral pricing** (quadratic formula) — tokens are priced at the cumulative cost across the supply range, not a spot price. This prevents large mints from underpaying.
 - Protocol fee (12%) is deducted from ETH in, remainder buys tokens.
 - `minTokens` parameter provides slippage protection.
-- `ReentrancyGuard` on mint to prevent reentrancy via fallback.
-- `getEstimatedCost` is a view for frontend price preview.
-
-**NOTE**: The simplified `mint()` uses spot price. For production, implement trapezoidal integration over the supply range to get accurate token output across larger mints. This prevents price manipulation on large orders.
+- `ReentrancyGuard` on both `mint` and `withdrawFees`.
+- `withdrawFees` checks for zero address and zero balance.
+- `getEstimatedCost` uses trapezoidal approximation (slightly less precise than integral, but close enough for frontend preview).
 
 ---
 
@@ -338,7 +342,7 @@ and supports Chainlink Automation for auto-resolution.
 
 **Key changes from original spec**:
 - Constructor takes 4 params: `(token, artifacts, glyphs, owner)` — `glyphs` is the `IEldritchGlyphs` reference
-- `commitRitual()` calls `glyphs.requestGlyph(msg.sender, epochId)` at the end to trigger VRF
+- `commitRitual()` wraps `glyphs.requestGlyph()` in try/catch so VRF outage doesn't halt sacrifices — emits `GlyphRequestFailed` on failure
 - Implements `checkUpkeep()` / `performUpkeep()` for Chainlink Automation auto-resolution
 - 71 tests (58 original + 13 Automation)
 
@@ -353,10 +357,16 @@ contract SummoningEngine is Ownable, ReentrancyGuard, AutomationCompatibleInterf
 
     constructor(address _token, address _artifacts, address _glyphs, address _owner) Ownable(_owner) { ... }
 
+    event GlyphRequestFailed(uint256 indexed epochId, address indexed wallet, bytes reason);
+
     function commitRitual(uint256 amount) external nonReentrant {
         // ... burns tokens, records contribution ...
         emit RitualSacrifice(id, msg.sender, amount, epoch.totalCommitted);
-        glyphs.requestGlyph(msg.sender, id);  // Trigger VRF glyph mint
+
+        // Non-blocking VRF request — sacrifice succeeds even if VRF is down
+        try glyphs.requestGlyph(msg.sender, id) {} catch (bytes memory reason) {
+            emit GlyphRequestFailed(id, msg.sender, reason);
+        }
     }
 
     // ── Chainlink Automation ──
@@ -568,26 +578,29 @@ contract ElderArtifacts is ERC1155, Ownable {
 
 On-chain tradeable glyph NFTs. Each sacrifice mints a unique ERC-1155 glyph via Chainlink VRF.
 
-**Inherits**: `ERC1155`, `VRFConsumerBaseV2Plus`, `ERC2981`, `ReentrancyGuard`
+**Inherits**: `ERC1155`, `VRFConsumerBaseV2Plus`, `ERC2981`
 
 **Key design decisions**:
 - **Tradeable, not soulbound** — enables secondary market and late-joiner participation
 - **EIP-2981 royalties** — 5% on secondary sales to treasury
 - **VRF for fairness** — provably random tier assignment (same cumulative thresholds: 5000/7800/9300/9900/10000)
+- **Double-fulfill guard** — `fulfillRandomWords` checks `pending.fulfilled` flag before minting, preventing duplicate glyphs from VRF coordinator bugs
 - **glyphCount tracking** — `_update()` override tracks per-wallet count on mint/transfer/burn, so cult rank reflects current ownership
 - **Separate from SummoningEngine** — clean separation of concerns; engine calls `requestGlyph()`, VRF callback mints
 
 ```solidity
-contract EldritchGlyphs is ERC1155, VRFConsumerBaseV2Plus, ERC2981, ReentrancyGuard {
+contract EldritchGlyphs is ERC1155, VRFConsumerBaseV2Plus, ERC2981 {
     function requestGlyph(address recipient, uint256 epochId) external onlyEngine returns (uint256 requestId);
-    function fulfillRandomWords(uint256 requestId, uint256[] calldata randomWords) internal override;
+    function fulfillRandomWords(uint256 requestId, uint256[] calldata randomWords) internal override {
+        // Checks pending.fulfilled flag to prevent double-mint
+    }
     function getGlyphData(uint256 tokenId) external view returns (GlyphData memory);
     function glyphCount(address wallet) external view returns (uint256);
     function totalMinted() external view returns (uint256);
 }
 ```
 
-**32 tests** covering: VRF fulfillment, tier derivation boundaries, fuzz distribution (1000 samples ±2%), royalty info, glyphCount tracking on transfers, supportsInterface (ERC1155 + ERC2981).
+**33 tests** covering: VRF fulfillment, double-fulfill revert, tier derivation boundaries, fuzz distribution (10,000 samples ±2%), royalty info, glyphCount tracking on transfers, supportsInterface (ERC1155 + ERC2981).
 
 ### 3.6 Contract Deployment Order
 
@@ -1220,7 +1233,7 @@ contracts/test/
 └── Integration.t.sol        # Full flow: mint → sacrifice → resolve → claim
 ```
 
-**Total: 178 tests across 5 suites** (as of Step 27).
+**Total: 183 tests across 5 suites** (as of Step 32). All pass with 10,000 fuzz runs.
 
 **Coverage targets**:
 - 100% branch coverage on BondingCurve (holds treasury)
@@ -1418,17 +1431,23 @@ Step 26: On-chain glyphs via Chainlink VRF — EldritchGlyphs.sol contract   ✅
 Step 27: Chainlink Automation — checkUpkeep/performUpkeep on               ✅
          SummoningEngine for auto epoch resolution. 13 Automation tests.
          178 total tests across 5 suites. Deployed to Sepolia.
-Step 28: Deploy subgraph to The Graph Studio
-Step 29: Full integration test on Sepolia: complete epoch lifecycle
+Step 28: Deploy subgraph to The Graph Studio                   (skipped — not needed for V1, backend event indexer covers it)
+Step 29: Full integration test on Sepolia                              ✅
+         Complete epoch lifecycle verified: start epoch → sacrifice
+         → VRF callback mints glyph #1 (Whisper, ◈) → resolve
+         → claim Shattered Ritual artifact (token 2000). All on-chain.
 ```
 
 ### Week 4: Security & Launch Prep
 
 ```
-Step 30: Internal security review — check all access controls, reentrancy
-Step 31: Run Slither static analysis on all contracts
-Step 32: Run forge test with high fuzz runs (10,000+)
-Step 33: Submit to Code4rena or Sherlock competitive audit
+Step 30: Internal security review — found and fixed 6 must-fix issues  ✅
+         CRITICAL: BondingCurve integral pricing (was spot price)
+         MEDIUM: VRF try/catch, double-fulfill guard, setMinter
+         zero-address, withdrawFees nonReentrant
+Step 31: Slither static analysis — clean, 1 minor fix (string.concat) ✅
+Step 32: forge test 10,000 fuzz runs — 183 tests, 0 failures          ✅
+Step 33: Competitive audit                                     (deferred — revisit post-revenue)
 Step 34: Deploy to mainnet staging (with low threshold test epoch)
 Step 35: Set up domain, ENS name, SSL
 Step 36: Set up monitoring + alerting on backend
