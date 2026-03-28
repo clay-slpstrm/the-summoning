@@ -44,7 +44,7 @@ Crypto needs to be fun again. The Summoning combines collective coordination (th
 
 ### 1.4 Revenue Model
 
-Users deposit ETH into a bonding curve to mint $RITUAL tokens. A 12% protocol fee is extracted from every mint. $RITUAL tokens are burned (destroyed permanently) during gameplay. Revenue = 12% of all ETH deposited. There is no other revenue mechanism.
+Users deposit ETH into a dynamic minting curve to mint $RITUAL tokens. A 12% protocol fee is extracted from every mint. All ETH in the contract is withdrawable by the multisig owner — there is no sell-back mechanism. $RITUAL tokens are burned (destroyed permanently) during gameplay. Revenue = 12% of all ETH deposited + 5% royalties on secondary glyph NFT sales.
 
 ---
 
@@ -148,9 +148,9 @@ Player wants another pull → Repeat
 
 ---
 
-### 4.2 F2: Bonding Curve Mint Interface
+### 4.2 F2: Minting Curve Interface
 
-**Description**: Users deposit ETH to mint $RITUAL tokens via the bonding curve.
+**Description**: Users deposit ETH to mint $RITUAL tokens via the minting curve.
 
 **User Story**: As a user, I want to buy $RITUAL tokens with ETH so I can participate in summoning rituals.
 
@@ -605,7 +605,7 @@ Never sacrifice clarity for atmosphere. If a user doesn't understand what a butt
 - "⬡ PERFORM SACRIFICE" (primary action)
 - "◈ CHANNELING..." (during transaction)
 - "APPROVE $RITUAL" (first-time approval)
-- "MINT $RITUAL" (bonding curve)
+- "MINT $RITUAL" (minting curve)
 - "CLAIM ARTIFACT" (after epoch resolution)
 
 **Progress indicators**:
@@ -646,7 +646,7 @@ These features are required for the first epoch to be a great experience:
 | Feature | Description |
 |---------|-------------|
 | F1: Wallet Connection | Connect, show balances, chain detection |
-| F2: Bonding Curve Mint | Deposit ETH, receive $RITUAL |
+| F2: Minting Curve | Deposit ETH, receive $RITUAL |
 | F3: Sacrifice Interface | Amount selector, sacrifice button, approval flow |
 | F4: Glyph Reveal | Full-screen gacha animation (all 5 tiers) |
 | F5: Glyph Collection | Grid display with tier coloring and tooltips |

@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { useAccount } from "wagmi";
-import { useMintRitual } from "@/hooks/useBondingCurve";
+import { useMintRitual } from "@/hooks/useMintingCurve";
 import { useRitualBalance } from "@/hooks/useRitualToken";
 import { PricePreview } from "./PricePreview";
 

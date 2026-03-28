@@ -1,6 +1,6 @@
 "use client";
 
-import { useCurrentPrice } from "@/hooks/useBondingCurve";
+import { useCurrentPrice } from "@/hooks/useMintingCurve";
 import { formatUnits, parseEther } from "viem";
 
 type Props = {

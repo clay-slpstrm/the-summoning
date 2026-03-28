@@ -3,7 +3,7 @@ pragma solidity ^0.8.24;
 
 import "forge-std/Script.sol";
 import "../src/RitualToken.sol";
-import "../src/BondingCurve.sol";
+import "../src/MintingCurve.sol";
 import "../src/SummoningEngine.sol";
 import "../src/ElderArtifacts.sol";
 
@@ -17,8 +17,8 @@ contract Deploy is Script {
         // 1. Deploy RitualToken
         RitualToken token = new RitualToken(owner);
 
-        // 2. Deploy BondingCurve
-        BondingCurve curve = new BondingCurve(address(token), owner);
+        // 2. Deploy MintingCurve
+        MintingCurve curve = new MintingCurve(address(token), owner);
 
         // 3. Deploy ElderArtifacts
         ElderArtifacts artifacts = new ElderArtifacts(
@@ -44,7 +44,7 @@ contract Deploy is Script {
 
         // Log deployed addresses
         console.log("RitualToken:", address(token));
-        console.log("BondingCurve:", address(curve));
+        console.log("MintingCurve:", address(curve));
         console.log("ElderArtifacts:", address(artifacts));
         console.log("SummoningEngine:", address(engine));
     }

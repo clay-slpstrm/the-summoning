@@ -14,8 +14,8 @@
 export const RITUAL_TOKEN_ADDRESS =
   (process.env.NEXT_PUBLIC_RITUAL_TOKEN_ADDRESS || "") as `0x${string}`;
 
-export const BONDING_CURVE_ADDRESS =
-  (process.env.NEXT_PUBLIC_BONDING_CURVE_ADDRESS || "") as `0x${string}`;
+export const MINTING_CURVE_ADDRESS =
+  (process.env.NEXT_PUBLIC_MINTING_CURVE_ADDRESS || "") as `0x${string}`;
 
 export const SUMMONING_ENGINE_ADDRESS =
   (process.env.NEXT_PUBLIC_SUMMONING_ENGINE_ADDRESS || "") as `0x${string}`;
@@ -38,7 +38,7 @@ export const RITUAL_TOKEN_ABI = parseAbi([
   "function totalSupply() view returns (uint256)",
 ]);
 
-export const BONDING_CURVE_ABI = parseAbi([
+export const MINTING_CURVE_ABI = parseAbi([
   "function mint(uint256 minTokens) payable",
   "function getCurrentPrice() view returns (uint256)",
   "function getEstimatedCost(uint256 tokenAmount) view returns (uint256)",

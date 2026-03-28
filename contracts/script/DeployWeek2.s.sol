@@ -6,7 +6,7 @@ import "../src/SummoningEngine.sol";
 import "../src/ElderArtifacts.sol";
 
 /// @notice Week 2 deployment: redeploy only SummoningEngine + ElderArtifacts.
-///         RitualToken and BondingCurve are already live on Sepolia and kept as-is.
+///         RitualToken and MintingCurve are already live on Sepolia and kept as-is.
 ///
 /// Required env vars:
 ///   DEPLOYER_PRIVATE_KEY   — deployer wallet private key (hex, no 0x prefix)

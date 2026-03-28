@@ -5,12 +5,13 @@ import "@openzeppelin/contracts/access/Ownable.sol";
 import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 import "./interfaces/IRitualToken.sol";
 
-/// @title BondingCurve
-/// @notice Holds the ETH treasury and mints $RITUAL at a linearly increasing price.
+/// @title MintingCurve
+/// @notice Holds ETH and mints $RITUAL at a linearly increasing price.
+///         All ETH (12% protocol fee + 88% treasury) is withdrawable by the owner (multisig).
 /// @dev Price formula: BASE_PRICE * (1 + totalSupplyInTokens / SCALE_FACTOR)
 ///      Supply is normalized from wei to whole tokens before applying SCALE_FACTOR.
 ///      Protocol fee (12%) is deducted from ETH in; remainder determines token output.
-contract BondingCurve is Ownable, ReentrancyGuard {
+contract MintingCurve is Ownable, ReentrancyGuard {
     IRitualToken public immutable ritualToken;
 
     uint256 public constant BASE_PRICE = 0.0001 ether; // price per token at zero supply
@@ -18,19 +19,17 @@ contract BondingCurve is Ownable, ReentrancyGuard {
     uint256 public constant PROTOCOL_FEE_BPS = 1200; // 12%
     uint256 public constant BPS_DENOMINATOR = 10_000;
 
-    /// @notice Accumulated protocol fees withdrawable by owner.
-    uint256 public protocolFees;
-
-    error BondingCurve__InsufficientPayment();
-    error BondingCurve__SlippageExceeded();
-    error BondingCurve__WithdrawFailed();
-    error BondingCurve__ZeroAddress();
+    error MintingCurve__InsufficientPayment();
+    error MintingCurve__SlippageExceeded();
+    error MintingCurve__WithdrawFailed();
+    error MintingCurve__ZeroAddress();
+    error MintingCurve__NothingToWithdraw();
 
     event TokensMinted(address indexed buyer, uint256 ethIn, uint256 tokensOut, uint256 fee);
-    event FeesWithdrawn(address indexed to, uint256 amount);
+    event Withdrawn(address indexed to, uint256 amount);
 
     constructor(address _token, address _owner) Ownable(_owner) {
-        if (_token == address(0)) revert BondingCurve__ZeroAddress();
+        if (_token == address(0)) revert MintingCurve__ZeroAddress();
         ritualToken = IRitualToken(_token);
     }
 
@@ -68,30 +67,28 @@ contract BondingCurve is Ownable, ReentrancyGuard {
     ///      Solving for s₁ given netEth yields a quadratic; we use the quadratic formula.
     /// @param minTokens Minimum tokens to receive; reverts if actual output is less.
     function mint(uint256 minTokens) external payable nonReentrant {
-        if (msg.value == 0) revert BondingCurve__InsufficientPayment();
+        if (msg.value == 0) revert MintingCurve__InsufficientPayment();
 
         uint256 fee = msg.value * PROTOCOL_FEE_BPS / BPS_DENOMINATOR;
         uint256 netEth = msg.value - fee;
-        protocolFees += fee;
 
         uint256 tokensOut = _calcTokensOut(netEth);
 
-        if (tokensOut < minTokens) revert BondingCurve__SlippageExceeded();
+        if (tokensOut < minTokens) revert MintingCurve__SlippageExceeded();
 
         ritualToken.mint(msg.sender, tokensOut);
         emit TokensMinted(msg.sender, msg.value, tokensOut, fee);
     }
 
-    /// @notice Owner withdraws accumulated protocol fees.
-    /// @param to Recipient address.
-    function withdrawFees(address to) external onlyOwner nonReentrant {
-        if (to == address(0)) revert BondingCurve__ZeroAddress();
-        uint256 amount = protocolFees;
-        if (amount == 0) revert BondingCurve__InsufficientPayment();
-        protocolFees = 0;
+    /// @notice Owner withdraws ETH from the contract. Sends the entire balance.
+    /// @param to Recipient address (multisig).
+    function withdraw(address to) external onlyOwner nonReentrant {
+        if (to == address(0)) revert MintingCurve__ZeroAddress();
+        uint256 amount = address(this).balance;
+        if (amount == 0) revert MintingCurve__NothingToWithdraw();
         (bool ok,) = to.call{ value: amount }("");
-        if (!ok) revert BondingCurve__WithdrawFailed();
-        emit FeesWithdrawn(to, amount);
+        if (!ok) revert MintingCurve__WithdrawFailed();
+        emit Withdrawn(to, amount);
     }
 
     // ── Internal ────────────────────────────────────────────────────────────

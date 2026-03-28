@@ -4,7 +4,7 @@
 
 ## Project Overview
 
-The Summoning is a Lovecraftian onchain coordination game on Ethereum mainnet. Players mint $RITUAL tokens via a bonding curve, burn them in timed summoning epochs, and receive gacha-style micro-rewards (Eldritch Glyphs) on every sacrifice plus tiered ERC-1155 artifacts on successful summonings.
+The Summoning is a Lovecraftian onchain coordination game on Ethereum mainnet. Players mint $RITUAL tokens via a dynamic minting curve, burn them in timed summoning epochs, and receive gacha-style micro-rewards (Eldritch Glyphs) on every sacrifice plus tiered ERC-1155 artifacts on successful summonings.
 
 ## Key Documents
 
@@ -107,7 +107,7 @@ npm run lint                   # ESLint
 
 ### Solidity
 - NatSpec comments on all public/external functions
-- Custom errors prefixed with contract context (e.g., `BondingCurve__SlippageExceeded`)
+- Custom errors prefixed with contract context (e.g., `MintingCurve__SlippageExceeded`)
 - Constants in UPPER_SNAKE_CASE
 - Events emitted on every state change
 - No magic numbers — use named constants
@@ -189,7 +189,7 @@ Buttons: bg gradient(135deg, #4c1d95, #7c3aed), uppercase, tracking-widest, seri
 
 2. **VRF resilience**: `commitRitual()` wraps `glyphs.requestGlyph()` in a try/catch. If VRF is down (e.g., LINK depleted), the sacrifice still succeeds (tokens burned, contribution recorded) but no glyph is minted. A `GlyphRequestFailed` event is emitted for the backend to detect.
 
-3. **BondingCurve uses integral pricing**: `mint()` solves the quadratic formula over the price curve integral, not a spot price. This prevents large mints from underpaying. `getEstimatedCost()` uses a trapezoidal approximation for frontend previews.
+3. **MintingCurve uses integral pricing**: `mint()` solves the quadratic formula over the price curve integral, not a spot price. This prevents large mints from underpaying. `getEstimatedCost()` uses a trapezoidal approximation for frontend previews. All ETH in the contract (12% fee + 88% treasury) is withdrawable by the owner (multisig) via `withdraw()`. There is no sell-back mechanism.
 
 4. **The glyph reveal animation is the most important UX element**. The VRF wait (~30-60s) is covered by the ChannelingOverlay. The GlyphReveal animation fires on the `glyph_reveal` WebSocket message. Target: ~2.5s for Whisper/Echo, ~4s for Tremor+. See PRD.md Section 4.4 for full timing spec.
 
@@ -204,7 +204,7 @@ Buttons: bg gradient(135deg, #4c1d95, #7c3aed), uppercase, tracking-widest, seri
 ## Testing Requirements
 
 - Contracts: 183 tests across 5 suites, all passing with 10,000 fuzz runs
-- Contracts: 100% branch coverage on BondingCurve, SummoningEngine, and EldritchGlyphs
+- Contracts: 100% branch coverage on MintingCurve, SummoningEngine, and EldritchGlyphs
 - Contracts: Fuzz test on EldritchGlyphs tier distribution — 10,000 VRF seeds, ±2% of 50/28/15/6/1
 - Backend: Idempotency test — processing same GlyphMinted event twice must not create duplicate glyphs
 - Frontend: Portal renders correctly at 0%, 25%, 50%, 75%, 95% progress
@@ -213,7 +213,7 @@ Buttons: bg gradient(135deg, #4c1d95, #7c3aed), uppercase, tracking-widest, seri
 
 Follow the numbered steps in ARCHITECTURE.md Section 10. Each step should be fully tested before proceeding. The high-level sequence is:
 
-1. Week 1: RitualToken + BondingCurve → deploy to Sepolia → basic mint frontend
+1. Week 1: RitualToken + MintingCurve → deploy to Sepolia → basic mint frontend
 2. Week 2: SummoningEngine + ElderArtifacts + Glyph Engine backend + glyph reveal UI
 3. Week 3: Portal visualization + epoch status + leaderboard + polish
 4. Week 4: Security review + audit prep + mainnet staging

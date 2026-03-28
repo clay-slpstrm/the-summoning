@@ -6,9 +6,9 @@ import "@openzeppelin/contracts/token/ERC20/extensions/ERC20Burnable.sol";
 import "@openzeppelin/contracts/access/Ownable.sol";
 
 /// @title RitualToken
-/// @notice ERC-20 token ($RITUAL) with restricted minting via BondingCurve and public burn.
+/// @notice ERC-20 token ($RITUAL) with restricted minting via MintingCurve and public burn.
 contract RitualToken is ERC20, ERC20Burnable, Ownable {
-    /// @notice The address authorized to mint tokens (BondingCurve contract).
+    /// @notice The address authorized to mint tokens (MintingCurve contract).
     address public minter;
 
     error OnlyMinter();
@@ -25,7 +25,7 @@ contract RitualToken is ERC20, ERC20Burnable, Ownable {
     constructor(address _owner) ERC20("Ritual", "RITUAL") Ownable(_owner) {}
 
     /// @notice Set the minter address. Can only be called once by owner.
-    /// @param _minter The BondingCurve contract address.
+    /// @param _minter The MintingCurve contract address.
     function setMinter(address _minter) external onlyOwner {
         if (_minter == address(0)) revert ZeroAddress();
         if (minter != address(0)) revert MinterAlreadySet();
@@ -33,7 +33,7 @@ contract RitualToken is ERC20, ERC20Burnable, Ownable {
         emit MinterSet(_minter);
     }
 
-    /// @notice Mint tokens. Only callable by the BondingCurve.
+    /// @notice Mint tokens. Only callable by the MintingCurve.
     /// @param to Recipient address.
     /// @param amount Token amount (18 decimals).
     function mint(address to, uint256 amount) external onlyMinter {

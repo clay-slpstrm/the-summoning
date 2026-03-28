@@ -7,7 +7,7 @@ import "../src/SummoningEngine.sol";
 import "../src/ElderArtifacts.sol";
 
 /// @notice Deploy EldritchGlyphs + redeploy SummoningEngine with VRF glyph support.
-///         RitualToken, BondingCurve, and ElderArtifacts remain at existing addresses.
+///         RitualToken, MintingCurve, and ElderArtifacts remain at existing addresses.
 ///
 /// Required env vars:
 ///   DEPLOYER_PRIVATE_KEY       — deployer wallet private key

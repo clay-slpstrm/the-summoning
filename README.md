@@ -8,7 +8,7 @@ Players collectively burn $RITUAL tokens to breach the veil and summon Great Old
 
 ## How It Works
 
-1. **Mint $RITUAL** — Deposit ETH into the bonding curve to receive $RITUAL tokens
+1. **Mint $RITUAL** — Deposit ETH into the minting curve to receive $RITUAL tokens
 2. **Join the Ritual** — During the Ritual Phase, sacrifice $RITUAL to help breach the veil
 3. **Receive Glyphs** — Every sacrifice reveals an Eldritch Glyph (5 rarity tiers, 50% → 1%)
 4. **Summon the Old One** — If the collective burn threshold is met, the Old One is summoned
@@ -75,7 +75,7 @@ Visit `http://localhost:3000` to open the application.
 | Contract | Description |
 |----------|-------------|
 | `RitualToken.sol` | ERC-20 $RITUAL token with restricted minting |
-| `BondingCurve.sol` | ETH → $RITUAL minting with 12% protocol fee |
+| `MintingCurve.sol` | ETH → $RITUAL minting with 12% protocol fee |
 | `SummoningEngine.sol` | Epoch lifecycle, token burns, reward distribution |
 | `ElderArtifacts.sol` | ERC-1155 multi-token for summoning rewards |
 

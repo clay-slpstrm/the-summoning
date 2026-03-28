@@ -71,19 +71,19 @@ the-summoning/
 │   ├── foundry.toml
 │   ├── src/
 │   │   ├── RitualToken.sol
-│   │   ├── BondingCurve.sol
+│   │   ├── MintingCurve.sol
 │   │   ├── SummoningEngine.sol   # + Chainlink Automation (auto-resolve)
 │   │   ├── ElderArtifacts.sol
 │   │   ├── EldritchGlyphs.sol    # On-chain glyph NFTs (ERC-1155 + VRF + EIP-2981)
 │   │   └── interfaces/
 │   │       ├── IRitualToken.sol
-│   │       ├── IBondingCurve.sol
+│   │       ├── IMintingCurve.sol
 │   │       ├── ISummoningEngine.sol
 │   │       ├── IElderArtifacts.sol
 │   │       └── IEldritchGlyphs.sol
 │   ├── test/
 │   │   ├── RitualToken.t.sol
-│   │   ├── BondingCurve.t.sol
+│   │   ├── MintingCurve.t.sol
 │   │   ├── SummoningEngine.t.sol  # 71 tests (incl. Automation)
 │   │   ├── ElderArtifacts.t.sol
 │   │   └── EldritchGlyphs.t.sol   # 32 tests (VRF, tiers, royalties)
@@ -159,7 +159,7 @@ the-summoning/
 │   │       └── LoreMessage.tsx
 │   ├── hooks/
 │   │   ├── useRitualToken.ts    # wagmi hooks for $RITUAL
-│   │   ├── useBondingCurve.ts   # Mint/price hooks
+│   │   ├── useMintingCurve.ts   # Mint/price hooks
 │   │   ├── useSummoning.ts      # commitRitual, epoch state
 │   │   ├── useGlyphs.ts        # WebSocket glyph subscription
 │   │   ├── useEpochProgress.ts  # Real-time progress
@@ -201,7 +201,7 @@ import "@openzeppelin/contracts/token/ERC20/extensions/ERC20Burnable.sol";
 import "@openzeppelin/contracts/access/Ownable.sol";
 
 contract RitualToken is ERC20, ERC20Burnable, Ownable {
-    address public minter; // BondingCurve contract
+    address public minter; // MintingCurve contract
 
     error OnlyMinter();
 
@@ -223,15 +223,15 @@ contract RitualToken is ERC20, ERC20Burnable, Ownable {
 ```
 
 **Key decisions**:
-- No max supply. Minting is controlled by the BondingCurve.
+- No max supply. Minting is controlled by the MintingCurve.
 - `ERC20Burnable` gives any holder `burn()` and `burnFrom()`.
-- Minter is set once to the BondingCurve address after deployment.
+- Minter is set once to the MintingCurve address after deployment.
 
 ---
 
-### 3.2 BondingCurve.sol
+### 3.2 MintingCurve.sol
 
-Holds the ETH treasury. Mints $RITUAL at a price that increases with supply.
+Dynamic minting curve — mints $RITUAL at a linearly increasing price. All ETH (12% fee + 88% treasury) is withdrawable by the owner (multisig). There is no sell-back/redeem mechanism.
 
 ```solidity
 // SPDX-License-Identifier: MIT
@@ -241,7 +241,7 @@ import "@openzeppelin/contracts/access/Ownable.sol";
 import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 import "./interfaces/IRitualToken.sol";
 
-contract BondingCurve is Ownable, ReentrancyGuard {
+contract MintingCurve is Ownable, ReentrancyGuard {
     IRitualToken public immutable ritualToken;
 
     uint256 public constant BASE_PRICE = 0.0001 ether;  // per token (in wei)
@@ -249,31 +249,25 @@ contract BondingCurve is Ownable, ReentrancyGuard {
     uint256 public constant PROTOCOL_FEE_BPS = 1200;     // 12% in basis points
     uint256 public constant BPS_DENOMINATOR = 10000;
 
-    uint256 public protocolFees;  // accumulated fees withdrawable by owner
-
     event TokensMinted(address indexed buyer, uint256 ethIn, uint256 tokensOut, uint256 fee);
-    event FeesWithdrawn(address indexed to, uint256 amount);
+    event Withdrawn(address indexed to, uint256 amount);
 
-    error InsufficientPayment();
-    error SlippageExceeded();
-    error WithdrawFailed();
+    error MintingCurve__InsufficientPayment();
+    error MintingCurve__SlippageExceeded();
+    error MintingCurve__WithdrawFailed();
+    error MintingCurve__ZeroAddress();
+    error MintingCurve__NothingToWithdraw();
 
     constructor(address _token, address _owner) Ownable(_owner) {
+        if (_token == address(0)) revert MintingCurve__ZeroAddress();
         ritualToken = IRitualToken(_token);
     }
 
-    /// @notice Calculate the current price per token based on total supply
-    /// @dev price = BASE_PRICE * (1 + totalSupplyInTokens / SCALE_FACTOR)
-    ///      Supply is divided by 1e18 to convert from wei to whole-token units,
-    ///      so price doubles when 100M whole tokens have been minted.
     function getCurrentPrice() public view returns (uint256) {
         uint256 supply = ritualToken.totalSupply() / 1e18;
-        // price = BASE_PRICE + (BASE_PRICE * supplyInTokens / SCALE_FACTOR)
         return BASE_PRICE + (BASE_PRICE * supply / SCALE_FACTOR);
     }
 
-    /// @notice Estimate cost to mint a given number of tokens at current price
-    /// @dev Uses average price across the mint range for accuracy
     function getEstimatedCost(uint256 tokenAmount) public view returns (uint256) {
         uint256 supply = ritualToken.totalSupply() / 1e18;
         uint256 tokenAmountWhole = tokenAmount / 1e18;
@@ -284,39 +278,27 @@ contract BondingCurve is Ownable, ReentrancyGuard {
         return grossCost * BPS_DENOMINATOR / (BPS_DENOMINATOR - PROTOCOL_FEE_BPS);
     }
 
-    /// @notice Mint $RITUAL tokens by sending ETH. Slippage protection via minTokens.
-    /// @dev Uses the integral of the linear price function (quadratic formula) to compute
-    ///      tokens out fairly across the entire mint range. Large mints pay the correct
-    ///      cumulative price, preventing whale underpayment.
+    /// @dev Uses integral pricing (quadratic formula) for fair token output.
     function mint(uint256 minTokens) external payable nonReentrant {
-        if (msg.value == 0) revert InsufficientPayment();
-
+        if (msg.value == 0) revert MintingCurve__InsufficientPayment();
         uint256 fee = msg.value * PROTOCOL_FEE_BPS / BPS_DENOMINATOR;
         uint256 netEth = msg.value - fee;
-        protocolFees += fee;
-
         uint256 tokensOut = _calcTokensOut(netEth);
-
-        if (tokensOut < minTokens) revert SlippageExceeded();
-
+        if (tokensOut < minTokens) revert MintingCurve__SlippageExceeded();
         ritualToken.mint(msg.sender, tokensOut);
         emit TokensMinted(msg.sender, msg.value, tokensOut, fee);
     }
 
-    /// @notice Owner withdraws accumulated protocol fees
-    function withdrawFees(address to) external onlyOwner nonReentrant {
-        if (to == address(0)) revert BondingCurve__ZeroAddress();
-        uint256 amount = protocolFees;
-        if (amount == 0) revert InsufficientPayment();
-        protocolFees = 0;
+    /// @notice Owner withdraws entire ETH balance (fees + treasury).
+    function withdraw(address to) external onlyOwner nonReentrant {
+        if (to == address(0)) revert MintingCurve__ZeroAddress();
+        uint256 amount = address(this).balance;
+        if (amount == 0) revert MintingCurve__NothingToWithdraw();
         (bool ok, ) = to.call{value: amount}("");
-        if (!ok) revert WithdrawFailed();
-        emit FeesWithdrawn(to, amount);
+        if (!ok) revert MintingCurve__WithdrawFailed();
+        emit Withdrawn(to, amount);
     }
 
-    /// @dev Solve for tokensOut given netEth using the integral of the linear price curve.
-    ///      Quadratic: d² + (2*SF + 2*s₀)*d - (2*SF*netEth/BASE_PRICE) = 0
-    ///      Solved via: d = (-b + sqrt(b² + 4c)) / 2
     function _calcTokensOut(uint256 netEth) internal view returns (uint256);
     function _sqrt(uint256 x) internal pure returns (uint256);
 }
@@ -325,10 +307,10 @@ contract BondingCurve is Ownable, ReentrancyGuard {
 **Key decisions**:
 - Price is a linear function of supply: `BASE_PRICE * (1 + supply / 100M)`.
 - `mint()` uses **integral pricing** (quadratic formula) — tokens are priced at the cumulative cost across the supply range, not a spot price. This prevents large mints from underpaying.
-- Protocol fee (12%) is deducted from ETH in, remainder buys tokens.
+- Protocol fee (12%) is deducted from ETH in, remainder determines token output. The fee still affects pricing but is not tracked separately.
+- No sell-back mechanism — this is a minting curve, not a bonding curve. All ETH is withdrawable by the multisig via `withdraw()`.
 - `minTokens` parameter provides slippage protection.
-- `ReentrancyGuard` on both `mint` and `withdrawFees`.
-- `withdrawFees` checks for zero address and zero balance.
+- `ReentrancyGuard` on both `mint` and `withdraw`.
 - `getEstimatedCost` uses trapezoidal approximation (slightly less precise than integral, but close enough for frontend preview).
 
 ---
@@ -608,11 +590,11 @@ Deployment must follow this exact sequence:
 
 ```
 1. Deploy RitualToken(ownerMultisig)
-2. Deploy BondingCurve(ritualTokenAddress, ownerMultisig)
+2. Deploy MintingCurve(ritualTokenAddress, ownerMultisig)
 3. Deploy ElderArtifacts(metadataBaseUri, ownerMultisig)
 4. Deploy EldritchGlyphs(vrfCoordinator, subscriptionId, keyHash, callbackGasLimit, confirmations, baseURI, royaltyReceiver)
 5. Deploy SummoningEngine(ritualTokenAddress, elderArtifactsAddress, eldritchGlyphsAddress, ownerMultisig)
-6. Call RitualToken.setMinter(bondingCurveAddress)
+6. Call RitualToken.setMinter(mintingCurveAddress)
 7. Call ElderArtifacts.setEngine(summoningEngineAddress)
 8. Call EldritchGlyphs.setEngine(summoningEngineAddress)
 9. Add EldritchGlyphs as VRF consumer on Chainlink subscription
@@ -1193,7 +1175,7 @@ Owner calls startEpoch(oldOneId, threshold)
    │
    ├─→ Gathering Phase (48h)
    │     ├─ Frontend: Shows countdown to Ritual phase
-   │     ├─ Users: Mint $RITUAL via BondingCurve
+   │     ├─ Users: Mint $RITUAL via MintingCurve
    │     └─ Portal: Dormant state, ambient rotation only
    │
    ├─→ Ritual Phase (24h)  [block.timestamp >= ritualStart]
@@ -1226,7 +1208,7 @@ Owner calls startEpoch(oldOneId, threshold)
 ```
 contracts/test/
 ├── RitualToken.t.sol        # Mint, burn, access control
-├── BondingCurve.t.sol       # Price curve math, fee extraction, slippage
+├── MintingCurve.t.sol       # Price curve math, withdrawal, slippage
 ├── SummoningEngine.t.sol    # Full epoch lifecycle, contributions, rewards, Automation (71 tests)
 ├── ElderArtifacts.t.sol     # Minting, token IDs, URI generation (36 tests)
 ├── EldritchGlyphs.t.sol     # VRF flow, tier distribution, royalties, transfers (85 tests)
@@ -1236,12 +1218,12 @@ contracts/test/
 **Total: 183 tests across 5 suites** (as of Step 32). All pass with 10,000 fuzz runs.
 
 **Coverage targets**:
-- 100% branch coverage on BondingCurve (holds treasury)
+- 100% branch coverage on MintingCurve (holds treasury)
 - 100% branch coverage on SummoningEngine (core gameplay + Automation)
 - 100% branch coverage on EldritchGlyphs (VRF + minting + royalties)
-- Fuzz testing on BondingCurve.mint() for edge cases in math
+- Fuzz testing on MintingCurve.mint() for edge cases in math
 - Fuzz testing on EldritchGlyphs: 10,000 random VRF seeds → tier distribution within ±2% of 50/28/15/6/1
-- Invariant: `protocolFees + curveReserve == total ETH received`
+- Invariant: `contract.balance == total ETH received - total withdrawn`
 - Invariant: `totalBurned <= totalMinted` for RitualToken
 
 **Key test scenarios**:
@@ -1331,7 +1313,7 @@ WS_RPC_URL=wss://eth-mainnet.g.alchemy.com/v2/YOUR_KEY
 
 # ── Contract Addresses (populated after deployment) ──
 RITUAL_TOKEN_ADDRESS=0x...
-BONDING_CURVE_ADDRESS=0x...
+MINTING_CURVE_ADDRESS=0x...
 SUMMONING_ENGINE_ADDRESS=0x...
 ELDER_ARTIFACTS_ADDRESS=0x...
 
@@ -1346,7 +1328,7 @@ NEXT_PUBLIC_RPC_URL=https://eth-mainnet.g.alchemy.com/v2/YOUR_KEY
 NEXT_PUBLIC_WS_URL=wss://api.thesummoning.xyz/ws
 NEXT_PUBLIC_API_URL=https://api.thesummoning.xyz
 NEXT_PUBLIC_RITUAL_TOKEN_ADDRESS=0x...
-NEXT_PUBLIC_BONDING_CURVE_ADDRESS=0x...
+NEXT_PUBLIC_MINTING_CURVE_ADDRESS=0x...
 NEXT_PUBLIC_SUMMONING_ENGINE_ADDRESS=0x...
 NEXT_PUBLIC_ELDER_ARTIFACTS_ADDRESS=0x...
 
@@ -1374,7 +1356,7 @@ Follow this sequence. Each step should be fully tested before proceeding.
 Step 1:  Initialize Foundry project (forge init)                          ✅
 Step 2:  Install OpenZeppelin (forge install OpenZeppelin/openzeppelin-contracts) ✅
 Step 3:  Implement RitualToken.sol + tests                                ✅
-Step 4:  Implement BondingCurve.sol + tests (heavy fuzz testing on math)  ✅
+Step 4:  Implement MintingCurve.sol + tests (heavy fuzz testing on math)  ✅
 Step 5:  Write Deploy.s.sol, deploy to Anvil, verify end-to-end mint      ✅
 Step 6:  Deploy to Sepolia testnet                                        ✅
 Step 7:  Initialize Next.js frontend with wagmi                           ✅
@@ -1391,7 +1373,7 @@ Step 10: Implement SummoningEngine.sol + 57 tests (full epoch lifecycle)  ✅
 Step 11: Implement ElderArtifacts.sol + 36 tests                          ✅
          Includes: name/symbol, totalMinted mapping, uri() override, setBaseURI().
 Step 12: Deploy SummoningEngine + ElderArtifacts to Sepolia (targeted     ✅
-         redeploy preserving existing RitualToken + BondingCurve balances)
+         redeploy preserving existing RitualToken + MintingCurve balances)
          via script/DeployWeek2.s.sol. Verified on Sepolia Etherscan.
 Step 13: Backend: glyphRoll.ts + glyphEngine.ts + eventListener.ts        ✅
          + wsManager.ts + epochSync.ts + REST routes + Prisma schema.
@@ -1442,9 +1424,9 @@ Step 29: Full integration test on Sepolia                              ✅
 
 ```
 Step 30: Internal security review — found and fixed 6 must-fix issues  ✅
-         CRITICAL: BondingCurve integral pricing (was spot price)
+         CRITICAL: MintingCurve integral pricing (was spot price)
          MEDIUM: VRF try/catch, double-fulfill guard, setMinter
-         zero-address, withdrawFees nonReentrant
+         zero-address, withdraw nonReentrant
 Step 31: Slither static analysis — clean, 1 minor fix (string.concat) ✅
 Step 32: forge test 10,000 fuzz runs — 183 tests, 0 failures          ✅
 Step 33: Competitive audit                                     (deferred — revisit post-revenue)
