@@ -211,12 +211,12 @@ Player wants another pull → Repeat
 
 **Acceptance Criteria**:
 - Full-screen overlay with backdrop blur and dark background
-- 4-phase animation sequence:
-  - **Phase 1 — Channeling (0→100ms)**: Card scales from 0.5 to 1.0, spinning channeling symbol (✦), dark background
-  - **Phase 2 — Manifestation (100→600ms)**: Spinning symbol replaced by glyph rune. Background transitions to tier-colored gradient. Glow effect scales based on tier rarity. Tier color immediately signals rarity.
-  - **Phase 3 — Reveal (600→1200ms)**: Tier name fades in ("ECHO GLYPH"), lore text fades in. For Tremor+: "★ RARE ★" label. For Rupture+: "✦ LEGENDARY ✦" label. For Breach: screen shake effect + extended glow.
-  - **Phase 4 — Dismiss (1200ms+)**: "TAP TO CONTINUE" text appears. Click/tap anywhere dismisses overlay. Glyph animates to collection grid.
-- Total animation time: ~2.5 seconds for common tiers (Whisper, Echo), ~4 seconds for rare tiers (Tremor+)
+- 4-phase animation sequence with **rarity-scaled timing** (longer suspense for rarer tiers):
+  - **Phase 1 — Channeling (0→100ms)**: Card scales from 0.5 to 1.0, spinning channeling symbol (✦), dark background. Spinner is faster and tier-colored for rare+ tiers.
+  - **Phase 2 — Manifestation**: Spinning symbol replaced by glyph rune. Background transitions to tier-colored gradient. Glow effect scales based on tier rarity. Tier color immediately signals rarity. Timing: ~1000ms for common, ~1720ms for Tremor, ~2200ms for Rupture/Breach.
+  - **Phase 3 — Reveal**: Tier name fades in ("ECHO GLYPH"), lore text fades in. For Tremor+: "★ RARE ★" label. For Rupture+: "✦ LEGENDARY ✦" label. For Breach: screen shake effect + extended glow. Timing: ~2000ms for common, ~3440ms for Tremor, ~4400ms for Rupture/Breach.
+  - **Phase 4 — Dismiss**: "TAP TO CONTINUE" text appears. Click/tap anywhere dismisses overlay. Glyph animates to collection grid.
+- Total animation time: ~2s for common tiers (Whisper, Echo), ~3.4s for Tremor, ~4.4s for rare tiers (Rupture, Breach)
 - Tier-specific visual treatments:
   - **Whisper**: Gray glow, subtle, brief
   - **Echo**: Blue glow, moderate
@@ -241,8 +241,8 @@ Player wants another pull → Repeat
 **Acceptance Criteria**:
 - Grid layout: `repeat(auto-fill, minmax(52px, 1fr))` — responsive, fills available width
 - Each cell shows the rune symbol with tier-colored glow and background
-- Newest glyph animates in (scale from 0.8 to 1.0, opacity fade, 0.3s)
-- Hover/tap on glyph shows tooltip: tier name, rune, lore text
+- Newest glyph animates in with `glyph-enter` animation (scale 0.5→1, cubic-bezier bounce, 0.5s), a "NEW" badge in the tier color, and a double-intensity glow
+- Hover/tap on glyph shows tooltip: tier name, rune, lore text. Hover scales the rune symbol (1.25x)
 - Sort order: newest first (most recent glyph top-left)
 - Tier count summary bar above grid: shows count per tier (e.g., "Whisper: 12, Echo: 7, Tremor: 3, Rupture: 1, Breach: 0")
 - Each tier count uses the tier's signature color
@@ -480,7 +480,7 @@ The central visual element of the UI. A portal/rift in space that evolves as col
 6. **Inner void**: Smaller almond inside the tear, purple glow
 7. **Tentacles**: Line elements radiating from the tear, count scales with progress (0→8)
 8. **The Eye**: Ellipse in the center, appears at 80%+, ry animated for blinking effect
-9. **Progress text**: "XX.X% MANIFESTED" below the portal, monospace font
+9. **Progress text**: "SUMMONING PROGRESS" label with "XX.X%" below it in ritual purple (opacity scales with intensity), monospace font
 
 ---
 
@@ -573,6 +573,12 @@ Gold/Rupture:   #F59E0B (gold — legendary tier)
 - Tab navigation (Ritual Chamber / Glyphs) enables switching between main views on all screen sizes
 - Minimum supported width: 320px (iPhone SE)
 
+### 8.7 Pages & Navigation
+
+- **`/` (Home)**: Main summoning page. Header includes "About" nav link (inline on desktop, separate row on mobile). When wallet is not connected, shows a hero/onboarding section: "Burn $RITUAL tokens. Receive eldritch glyphs. Summon the Old Ones." with a "How it works" link to the About page. During Gathering phase with wallet connected, shows guidance text in place of the hidden sacrifice panel.
+- **`/about`**: Mythos-flavored explainer page with smooth-scroll Framer Motion sections: the pitch ("Ethereum used to be fun"), 4-step ritual walkthrough, interactive glyph tier grid, cult rank table, "Why" philosophy section, fully on-chain feature grid, and "Enter the Ritual" CTA. Uses the same design system (dark theme, Crimson Text headings, purple accents).
+- **Channeling Overlay**: Changed from a full-screen dark overlay (which made the app appear frozen) to a compact floating card in the bottom-right corner. Users can continue interacting with the app while VRF processes.
+
 ---
 
 ## 9. Copy & Lore
@@ -589,7 +595,7 @@ Never sacrifice clarity for atmosphere. If a user doesn't understand what a butt
 
 **Page title**: "THE SUMMONING"
 
-**Subtitle**: "Epoch I — The Dreaming One Stirs" (changes per epoch/Old One)
+**Subtitle**: Dynamic from epoch data — "Epoch {id} — {Old One subtitle}" (e.g., "Epoch 1 — The Dreaming One Stirs"). Falls back to "The veil grows thin..." when no epoch is active.
 
 **Section labels** (monospace, uppercase):
 - "THE RIFT" (portal section)
@@ -610,7 +616,7 @@ Never sacrifice clarity for atmosphere. If a user doesn't understand what a butt
 
 **Progress indicators**:
 - "X.XXM burned / Y.YYM needed" (collective progress)
-- "XX.X% MANIFESTED" (portal text)
+- "SUMMONING PROGRESS / XX.X%" (portal text)
 - "X glyphs to [Rank Name]" (rank progress)
 
 **Empty states**:
@@ -653,6 +659,8 @@ These features are required for the first epoch to be a great experience:
 | F6: Epoch Status | Phase indicator, countdown, collective progress bar |
 | F7: Cult Rank Bar | Current rank, progress to next rank |
 | Portal Visualization | 6-stage SVG portal responding to collective progress |
+| About Page | /about — mythos-flavored explainer with game loop, glyph tiers, cult ranks, CTA |
+| Hero/Onboarding | Disconnected users see pitch text + "How it works" link before mint interface |
 | Mobile Responsive | All P0 features work on mobile browsers |
 
 ### 10.2 P1 — Week 2 (Ship Within 1 Week of Launch)

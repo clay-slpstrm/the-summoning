@@ -125,7 +125,9 @@ the-summoning/
 │   ├── tailwind.config.ts
 │   ├── app/
 │   │   ├── layout.tsx           # Root layout with providers
-│   │   ├── page.tsx             # Main summoning page
+│   │   ├── page.tsx             # Main summoning page (hero, mint, portal, sacrifice, collection)
+│   │   ├── about/
+│   │   │   └── page.tsx         # About/explainer page with smooth-scroll sections
 │   │   └── globals.css
 │   ├── components/
 │   │   ├── providers/
@@ -992,26 +994,27 @@ export async function updateCultRank(wallet: string) {
 
 #### GlyphReveal.tsx
 - Full-screen overlay (fixed positioning, backdrop blur)
-- 4-phase animation sequence controlled by `setTimeout` chain:
+- 4-phase animation sequence controlled by `setTimeout` chain with **rarity-scaled timing**:
   - Phase 0 (0ms): Modal appears, scale(0.5), opacity 0
-  - Phase 1 (100ms): Scale to 1, opacity 1 — spinning channeling symbol
-  - Phase 2 (600ms): Glyph materializes — rune + color reveal tier
-  - Phase 3 (1200ms): Tier name, lore text, "tap to continue" fade in
+  - Phase 1 (100ms): Scale to 1, opacity 1 — spinning channeling symbol (faster + tier-colored for rare+)
+  - Phase 2 (variable): Glyph materializes — rune + color reveal tier. ~1000ms common, ~1720ms Tremor, ~2200ms Rupture/Breach
+  - Phase 3 (variable): Tier name, lore text, "tap to continue" fade in. ~2000ms common, ~3440ms Tremor, ~4400ms Rupture/Breach
+- `suspenseMultiplier`: 1.0x for common, 2.2x for Tremor, 3.0x for Rupture/Breach
 - Framer Motion `AnimatePresence` for enter/exit
-- Tier-specific effects: Tremor+ get expanded glow radius, Rupture/Breach get screen shake
+- Tier-specific effects: Tremor+ get expanded glow radius, faster spinner with tier glow. Rupture/Breach get screen shake
 
 #### SacrificePanel.tsx
-- Amount input field with quick-select buttons: 100, 500, 1000 $RITUAL
+- Amount input field with quick-select buttons: 100, 500, 1000 $RITUAL (uses `btn-quick-active`/`btn-quick-inactive` classes)
 - Checks allowance → prompts `approve()` if needed → calls `commitRitual(amount)`
 - Button states: "APPROVE & SACRIFICE" / "CONFIRM IN WALLET..." / "SACRIFICING..." / "SACRIFICE ACCEPTED"
-- Only visible during Ritual phase (hidden during Gathering, Resolved, Inactive)
-- After success, shows "VRF requested — channeling your glyph..." while ChannelingOverlay takes over
+- Only visible during Ritual phase. During Gathering phase, `page.tsx` shows guidance text ("Sacrifice opens soon") in its place
+- After success, shows a glowing container: "The void accepts your offering" + "VRF requested — channeling your glyph..." while ChannelingOverlay activates
 
 #### GlyphCollection.tsx
-- CSS Grid: `repeat(auto-fill, minmax(52px, 1fr))`
+- CSS Grid: `repeat(auto-fill, minmax(44px, 1fr))`
 - Each cell shows the rune symbol with tier-colored glow
-- Hover/tap shows tooltip with tier name + lore
-- Newest glyph animates in (scale from 0.8 to 1, opacity fade)
+- Hover scales the rune symbol (1.25x via `group-hover:scale-125`); title attribute shows tier name + lore
+- Newest glyph gets `animate-glyph-enter` (scale 0.5→1, cubic-bezier bounce), a "NEW" badge in tier color, and double-intensity glow
 
 #### EpochStatus.tsx
 - Reads epoch data directly from SummoningEngine contract via `useEpochProgress` hook
@@ -1022,8 +1025,9 @@ export async function updateCultRank(wallet: string) {
 - Shows portal stage name and participant count
 
 #### ChannelingOverlay.tsx
-- Full-screen overlay shown while waiting for Chainlink VRF callback (~30-60s)
-- Displays spinning channeling symbol, rotating lore messages, "AWAITING VRF CALLBACK..." status
+- Compact floating card in the bottom-right corner, shown while waiting for Chainlink VRF callback (~30-60s)
+- Displays spinning channeling symbol + rotating lore messages in a horizontal layout with frosted glass background
+- Does NOT block the viewport — users can continue interacting with the app (previously was a full-screen dark overlay that made the app appear frozen)
 - Visibility controlled by `useGlyphStore().pendingGlyphs` — shows when array is non-empty
 - Dismissed automatically when `glyph_reveal` WebSocket message arrives
 
@@ -1033,6 +1037,23 @@ export async function updateCultRank(wallet: string) {
 - On-chain count includes purchased/transferred glyphs, not just earned ones
 - Segmented progress bar — one segment per rank tier, filled proportionally
 - Color-coded rank name, "X glyphs to [Next Rank]" label
+
+#### Header.tsx
+- Title "THE SUMMONING" with double-layer purple text-shadow glow
+- Dynamic subtitle from `useEpochProgress()`: "Epoch {id} — {subtitle}", fallback "The veil grows thin..."
+- "About" nav link (inline on desktop via `hidden sm:block`, separate row on mobile via `sm:hidden`)
+- $RITUAL balance display + RainbowKit ConnectButton
+
+#### page.tsx (Home)
+- Hero/onboarding section for disconnected users: pitch text with colored keywords + "How it works" link to `/about`
+- During Gathering phase with wallet connected: shows guidance card ("Sacrifice opens soon") instead of hidden SacrificePanel
+- MintInterface success state auto-resets after 4s with glowing feedback container and green button
+
+#### about/page.tsx
+- Mythos-flavored explainer with 6 smooth-scroll sections using Framer Motion `whileInView` reveals
+- Sections: Hero, Pitch ("Ethereum used to be fun"), 4-step ritual walkthrough, interactive glyph tier grid (from `GLYPH_TIERS` constant), cult rank table (from `CULT_RANKS` constant), "Why" philosophy, fully on-chain feature grid, "Enter the Ritual" CTA
+- Same design system: dark background, Crimson Text headings, ritual purple accents
+- Back navigation: "← Back to the Ritual" link
 
 #### Leaderboard.tsx
 - Fetches from `/api/leaderboard` on mount
