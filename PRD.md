@@ -44,7 +44,20 @@ Crypto needs to be fun again. The Summoning combines collective coordination (th
 
 ### 1.4 Revenue Model
 
-Users deposit ETH into a dynamic minting curve to mint $RITUAL tokens. A 12% protocol fee is extracted from every mint. All ETH in the contract is withdrawable by the multisig owner — there is no sell-back mechanism. $RITUAL tokens are burned (destroyed permanently) during gameplay. Revenue = 12% of all ETH deposited + 5% royalties on secondary glyph NFT sales.
+Users deposit ETH into a dynamic minting curve to mint $RITUAL tokens. A 12% protocol fee (1200 BPS) is extracted from every mint before token calculation. $RITUAL tokens are burned (destroyed permanently) during gameplay. There is no sell-back mechanism — the minting curve is one-way.
+
+**Revenue streams**:
+- **Minting curve ETH**: 12% of all ETH deposited into the MintingCurve contract
+- **Secondary royalties**: 5% (500 BPS) on all secondary glyph NFT sales via EIP-2981
+
+### 1.5 Withdrawal Mechanics
+
+There is no fee/treasury split within the MintingCurve contract. The entire ETH balance (both the 12% protocol fee and the 88% that backed the token pricing) is held in the contract and withdrawable in a single call. This is by design — there is no sell-back mechanism, so the ETH backing the curve is not needed as a reserve.
+
+- **`withdraw(address to)`**: Sends the full contract balance to the specified address. Owner-only, protected by `ReentrancyGuard`. Reverts on zero address or zero balance.
+- **Owner**: Must be a Safe multisig (not an EOA). Set at deployment.
+- **Glyph royalties**: Paid directly to the `royaltyReceiver` address set in the EldritchGlyphs contract (also a multisig). The receiver and fee BPS are updatable via `setRoyalty(address, uint96)` (owner-only).
+- **No automated distribution**: Withdrawal is manual — the multisig must call `withdraw()` to move funds. This is intentional for security (no automated sweep that could be exploited).
 
 ---
 
