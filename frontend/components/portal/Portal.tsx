@@ -155,9 +155,14 @@ export default function Portal({
         )}
 
         {/* Progress text */}
-        <text x="110" y="195" textAnchor="middle" fill="#6b7280"
-          fontSize="9" style={{ fontFamily: "'Courier New', monospace" }}>
-          {progress.toFixed(1)}% MANIFESTED
+        <text x="110" y="192" textAnchor="middle" fill="#6b7280"
+          fontSize="8" style={{ fontFamily: "'Courier New', monospace" }}>
+          SUMMONING PROGRESS
+        </text>
+        <text x="110" y="204" textAnchor="middle" fill="#7c3aed"
+          fontSize="10" style={{ fontFamily: "'Courier New', monospace" }}
+          opacity={0.6 + intensity * 0.4}>
+          {progress.toFixed(1)}%
         </text>
       </svg>
     </div>

@@ -30,9 +30,13 @@ export default function GlyphReveal() {
       return;
     }
 
+    // Longer suspense for rarer tiers — PRD spec: ~2.5s common, ~4s rare+
+    const tierIndex = revealGlyph.tierIndex ?? 0;
+    const suspenseMultiplier = tierIndex >= 3 ? 3.0 : tierIndex >= 2 ? 2.2 : 1.0;
+
     const t1 = setTimeout(() => setPhase(1), 100);
-    const t2 = setTimeout(() => setPhase(2), 600);
-    const t3 = setTimeout(() => setPhase(3), 1200);
+    const t2 = setTimeout(() => setPhase(2), 400 + 600 * suspenseMultiplier);
+    const t3 = setTimeout(() => setPhase(3), 800 + 1200 * suspenseMultiplier);
 
     return () => {
       clearTimeout(t1);
@@ -82,13 +86,17 @@ export default function GlyphReveal() {
               : "none",
           }}
         >
-          {/* Phase 1: Channeling spinner */}
+          {/* Phase 1: Channeling spinner — pulses faster for rare tiers */}
           {phase < 2 && (
             <motion.div
               animate={{ rotate: 360 }}
-              transition={{ repeat: Infinity, duration: 1, ease: "linear" }}
-              className="text-5xl"
-              style={{ color: "#4c1d95", opacity: 0.6 }}
+              transition={{ repeat: Infinity, duration: isRare ? 0.6 : 1, ease: "linear" }}
+              className="text-5xl sm:text-6xl"
+              style={{
+                color: isRare ? tierConfig.color : "#4c1d95",
+                opacity: 0.6,
+                filter: isRare ? `drop-shadow(0 0 20px ${tierConfig.color})` : undefined,
+              }}
             >
               ✦
             </motion.div>

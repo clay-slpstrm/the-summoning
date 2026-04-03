@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useAccount } from "wagmi";
 import { useMintRitual } from "@/hooks/useMintingCurve";
 import { useRitualBalance } from "@/hooks/useRitualToken";
@@ -11,6 +11,7 @@ const QUICK_AMOUNTS = ["0.001", "0.01", "0.1"] as const;
 export function MintInterface() {
   const { isConnected } = useAccount();
   const [ethAmount, setEthAmount] = useState("0.01");
+  const [showSuccess, setShowSuccess] = useState(false);
   const { mint, isPending, isConfirming, isSuccess } = useMintRitual();
   const { display: balanceDisplay, refetch } = useRitualBalance();
 
@@ -19,15 +20,20 @@ export function MintInterface() {
     mint(ethAmount, 0n);
   };
 
-  // Refetch balance on success
-  if (isSuccess) {
-    refetch();
-  }
+  // Refetch balance on success and auto-reset after 4s
+  useEffect(() => {
+    if (isSuccess) {
+      refetch();
+      setShowSuccess(true);
+      const timer = setTimeout(() => setShowSuccess(false), 4000);
+      return () => clearTimeout(timer);
+    }
+  }, [isSuccess, refetch]);
 
   const buttonLabel = () => {
     if (isPending) return "Confirm in wallet...";
     if (isConfirming) return "Channeling...";
-    if (isSuccess) return "Ritual Complete ✓";
+    if (showSuccess) return "Ritual Complete ✓";
     return "Invoke the Ritual";
   };
 
@@ -90,8 +96,15 @@ export function MintInterface() {
           <PricePreview ethAmount={ethAmount} />
 
           {/* Success message */}
-          {isSuccess && (
-            <div className="text-center text-sm text-ritual-light font-mono animate-fade-in">
+          {showSuccess && (
+            <div
+              className="text-center text-sm text-ritual-light font-serif animate-fade-in py-2 rounded-lg"
+              style={{
+                background: "linear-gradient(135deg, #4c1d9522, #7c3aed22)",
+                border: "1px solid #7c3aed33",
+                boxShadow: "0 0 30px #7c3aed22",
+              }}
+            >
               The ritual is complete. $RITUAL flows to your wallet.
             </div>
           )}
@@ -101,6 +114,10 @@ export function MintInterface() {
             className="btn-sacrifice"
             onClick={handleMint}
             disabled={isDisabled}
+            style={showSuccess ? {
+              background: "linear-gradient(135deg, #065f46, #059669)",
+              boxShadow: "0 0 20px #05966944",
+            } : undefined}
           >
             {buttonLabel()}
           </button>

@@ -34,18 +34,22 @@ export default function GlyphCollection() {
       <div className="grid gap-1 sm:gap-1.5" style={{ gridTemplateColumns: "repeat(auto-fill, minmax(44px, 1fr))" }}>
         {glyphs.map((glyph, i) => {
           const tier = GLYPH_TIERS.find((t) => t.name === glyph.tierName) || GLYPH_TIERS[0];
+          const isNewest = i === 0;
           return (
             <div
               key={glyph.txHash || i}
-              className={`glyph-cell ${i === 0 ? "animate-fade-in" : ""}`}
+              className={`glyph-cell group ${isNewest ? "animate-glyph-enter" : ""}`}
               style={{
                 background: tier.bg,
                 borderColor: tier.color + "44",
-                boxShadow: `0 0 8px ${tier.glow}`,
+                boxShadow: isNewest
+                  ? `0 0 16px ${tier.glow}, 0 0 32px ${tier.glow}`
+                  : `0 0 8px ${tier.glow}`,
               }}
               title={`${glyph.tierName} Glyph: ${glyph.rune}\n"${glyph.lore}"`}
             >
               <span
+                className="transition-transform duration-200 group-hover:scale-125"
                 style={{
                   filter: `drop-shadow(0 0 4px ${tier.color})`,
                   color: tier.color,
@@ -53,6 +57,14 @@ export default function GlyphCollection() {
               >
                 {glyph.rune}
               </span>
+              {isNewest && (
+                <span
+                  className="absolute -top-1 -right-1 text-[7px] font-mono tracking-wider px-1 rounded"
+                  style={{ background: tier.color, color: "#0a0a0f" }}
+                >
+                  NEW
+                </span>
+              )}
             </div>
           );
         })}

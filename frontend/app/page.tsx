@@ -14,6 +14,7 @@ import SacrificePanel from "@/components/sacrifice/SacrificePanel";
 import { useGlyphs } from "@/hooks/useGlyphs";
 import { useEpochProgress } from "@/hooks/useEpochProgress";
 import { useUIStore } from "@/stores/uiStore";
+import Link from "next/link";
 
 export default function Home() {
   const { address } = useAccount();
@@ -43,6 +44,31 @@ export default function Home() {
       <div className="relative z-10 max-w-[900px] mx-auto px-3 sm:px-4 py-4 sm:py-6">
         <Header />
 
+        {/* Hero / onboarding — shown when wallet not connected */}
+        {!address && (
+          <div className="text-center mt-8 sm:mt-12 mb-6 sm:mb-8 max-w-lg mx-auto">
+            <p
+              className="text-lg sm:text-xl font-serif text-gray-300 leading-relaxed"
+              style={{ textShadow: "0 0 40px #7c3aed22" }}
+            >
+              Burn <span className="text-ritual-light">$RITUAL</span> tokens.
+              Receive <span className="text-tier-echo">eldritch glyphs</span>.
+              Summon <span className="text-tier-breach">the Old Ones</span>.
+            </p>
+            <p className="text-xs sm:text-sm text-gray-500 mt-3 font-mono tracking-wide">
+              A collective onchain coordination game on Ethereum.
+            </p>
+            <div className="flex items-center justify-center gap-4 mt-4">
+              <Link
+                href="/about"
+                className="text-[10px] sm:text-[11px] tracking-[2px] uppercase font-mono text-gray-500 hover:text-ritual-light transition-colors underline underline-offset-4 decoration-void-border hover:decoration-ritual/50"
+              >
+                How it works
+              </Link>
+            </div>
+          </div>
+        )}
+
         {/* Mint interface */}
         <div className="max-w-md mx-auto mt-6 sm:mt-8">
           <MintInterface />
@@ -65,10 +91,19 @@ export default function Home() {
           <EpochStatus />
         </div>
 
-        {/* Sacrifice panel — visible during Ritual phase */}
+        {/* Sacrifice panel — always show during Ritual, show guidance otherwise */}
         {address && epoch && (
           <div className="max-w-md mx-auto mt-6 sm:mt-8">
-            <SacrificePanel epoch={epoch} />
+            {epoch.phase === "Ritual" ? (
+              <SacrificePanel epoch={epoch} />
+            ) : epoch.phase === "Gathering" ? (
+              <div className="card text-center py-6 space-y-2">
+                <div className="section-label">Sacrifice opens soon</div>
+                <p className="text-xs sm:text-sm text-gray-500 italic">
+                  The gathering phase is active. Mint your $RITUAL tokens now — when the ritual phase begins, you&apos;ll sacrifice them to receive on-chain glyphs.
+                </p>
+              </div>
+            ) : null}
           </div>
         )}
 

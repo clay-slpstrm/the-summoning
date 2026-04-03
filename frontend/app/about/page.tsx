@@ -1,0 +1,320 @@
+"use client";
+
+import { motion } from "framer-motion";
+import Link from "next/link";
+import { GLYPH_TIERS, CULT_RANKS } from "@/lib/constants";
+
+const fadeUp = {
+  hidden: { opacity: 0, y: 30 },
+  visible: { opacity: 1, y: 0 },
+};
+
+const stagger = {
+  visible: { transition: { staggerChildren: 0.15 } },
+};
+
+function Section({
+  children,
+  className = "",
+  delay = 0,
+}: {
+  children: React.ReactNode;
+  className?: string;
+  delay?: number;
+}) {
+  return (
+    <motion.section
+      initial="hidden"
+      whileInView="visible"
+      viewport={{ once: true, margin: "-80px" }}
+      variants={{
+        hidden: { opacity: 0, y: 40 },
+        visible: {
+          opacity: 1,
+          y: 0,
+          transition: { duration: 0.7, delay, ease: [0.25, 0.1, 0.25, 1] },
+        },
+      }}
+      className={className}
+    >
+      {children}
+    </motion.section>
+  );
+}
+
+export default function AboutPage() {
+  return (
+    <div className="min-h-screen relative overflow-hidden">
+      {/* Background */}
+      <div
+        className="fixed inset-0 z-0"
+        style={{
+          background:
+            "radial-gradient(ellipse at 50% 30%, #0d0d1a 0%, #050508 70%)",
+        }}
+      />
+
+      <div className="relative z-10 max-w-[720px] mx-auto px-5 sm:px-6 py-8 sm:py-12">
+        {/* Back nav */}
+        <Link
+          href="/"
+          className="inline-flex items-center gap-2 text-[10px] sm:text-[11px] tracking-[2px] uppercase font-mono text-gray-600 hover:text-ritual-light transition-colors mb-10 sm:mb-14"
+        >
+          <span>&larr;</span> Back to the Ritual
+        </Link>
+
+        {/* ─── Hero ─── */}
+        <Section>
+          <motion.h1
+            initial={{ opacity: 0, scale: 0.95 }}
+            animate={{ opacity: 1, scale: 1 }}
+            transition={{ duration: 0.8, ease: [0.25, 0.1, 0.25, 1] }}
+            className="text-3xl sm:text-5xl font-bold tracking-[4px] sm:tracking-[8px] text-ritual-light uppercase text-center"
+            style={{ textShadow: "0 0 80px #7c3aed44, 0 0 160px #7c3aed22" }}
+          >
+            The Summoning
+          </motion.h1>
+          <motion.p
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            transition={{ duration: 0.6, delay: 0.3 }}
+            className="text-center text-gray-500 font-mono text-[10px] sm:text-[11px] tracking-[3px] uppercase mt-3"
+          >
+            A Lovecraftian Onchain Coordination Game
+          </motion.p>
+        </Section>
+
+        {/* ─── The Pitch ─── */}
+        <Section className="mt-16 sm:mt-24" delay={0.1}>
+          <p className="text-lg sm:text-xl font-serif text-gray-300 leading-relaxed text-center">
+            Ethereum used to be <em className="text-ritual-light not-italic">fun</em>.
+          </p>
+          <p className="text-base sm:text-lg font-serif text-gray-400 leading-relaxed text-center mt-4">
+            ICO summer. NFT summer. On-chain games that made you refresh the page
+            at 3 AM. Somewhere along the way, we traded that energy for dashboards
+            and doom-scrolling.
+          </p>
+          <p className="text-base sm:text-lg font-serif text-gray-300 leading-relaxed text-center mt-4">
+            The Summoning is a love letter to that feeling &mdash; rebuilt for the current moment.
+            Instead of watching charts, you&apos;re channeling collective degen energy into an
+            eldritch coordination game with real stakes and real rewards.
+          </p>
+        </Section>
+
+        {/* ─── How It Works ─── */}
+        <Section className="mt-16 sm:mt-24" delay={0.1}>
+          <h2 className="text-[11px] tracking-[4px] uppercase font-mono text-gray-600 mb-8 text-center">
+            The Ritual, Explained
+          </h2>
+
+          <motion.div
+            variants={stagger}
+            initial="hidden"
+            whileInView="visible"
+            viewport={{ once: true, margin: "-60px" }}
+            className="space-y-6"
+          >
+            {[
+              {
+                step: "I",
+                title: "Mint $RITUAL",
+                desc: "Deposit ETH into the minting curve. The price rises with supply \u2014 early believers pay less. You receive $RITUAL tokens, the fuel for everything that follows.",
+                color: "#7c3aed",
+              },
+              {
+                step: "II",
+                title: "Sacrifice to the Void",
+                desc: "When the ritual phase opens, burn your $RITUAL. Every sacrifice feeds the portal and earns you a provably fair Eldritch Glyph \u2014 an on-chain ERC-1155 NFT with a random rune, tier, and lore fragment.",
+                color: "#A855F7",
+              },
+              {
+                step: "III",
+                title: "Collect Glyphs, Rise in Rank",
+                desc: "Glyphs come in five tiers from common Whispers to the mythic Breach. Collect enough and your cult rank rises \u2014 from Uninitiated to Herald of the Breach. Each glyph is yours to keep or trade.",
+                color: "#4A9EFF",
+              },
+              {
+                step: "IV",
+                title: "Summon the Old One",
+                desc: "If the collective sacrifice meets the threshold before time runs out, the summoning succeeds. Top contributors earn tiered artifacts \u2014 Harbinger, Acolyte, or Cultist. If it fails? You receive a Shattered Ritual. Proof you tried.",
+                color: "#EF4444",
+              },
+            ].map((item) => (
+              <motion.div
+                key={item.step}
+                variants={fadeUp}
+                transition={{ duration: 0.5 }}
+                className="flex gap-4 sm:gap-5"
+              >
+                <div
+                  className="text-2xl sm:text-3xl font-serif font-bold shrink-0 w-10 text-right"
+                  style={{ color: item.color, opacity: 0.5 }}
+                >
+                  {item.step}
+                </div>
+                <div>
+                  <h3 className="text-base sm:text-lg font-serif text-gray-200">
+                    {item.title}
+                  </h3>
+                  <p className="text-sm text-gray-500 mt-1 leading-relaxed">
+                    {item.desc}
+                  </p>
+                </div>
+              </motion.div>
+            ))}
+          </motion.div>
+        </Section>
+
+        {/* ─── Glyph Tiers ─── */}
+        <Section className="mt-16 sm:mt-24" delay={0.1}>
+          <h2 className="text-[11px] tracking-[4px] uppercase font-mono text-gray-600 mb-6 text-center">
+            Eldritch Glyphs
+          </h2>
+          <p className="text-sm text-gray-500 text-center mb-8 max-w-md mx-auto">
+            Every sacrifice mints a glyph. Tier is determined by Chainlink VRF &mdash;
+            provably fair, fully on-chain. No server decides your fate.
+          </p>
+
+          <div className="grid grid-cols-5 gap-2 sm:gap-3 max-w-sm mx-auto">
+            {GLYPH_TIERS.map((tier) => (
+              <motion.div
+                key={tier.name}
+                whileHover={{ scale: 1.1, y: -4 }}
+                transition={{ type: "spring", stiffness: 400, damping: 15 }}
+                className="flex flex-col items-center gap-1.5"
+              >
+                <div
+                  className="w-12 h-12 sm:w-14 sm:h-14 rounded-lg flex items-center justify-center text-xl sm:text-2xl border"
+                  style={{
+                    background: tier.bg,
+                    borderColor: tier.color + "44",
+                    boxShadow: `0 0 12px ${tier.glow}`,
+                  }}
+                >
+                  <span style={{ color: tier.color, filter: `drop-shadow(0 0 6px ${tier.color})` }}>
+                    {tier.symbol}
+                  </span>
+                </div>
+                <span
+                  className="text-[9px] sm:text-[10px] font-mono tracking-wider"
+                  style={{ color: tier.color }}
+                >
+                  {tier.name}
+                </span>
+                <span className="text-[8px] text-gray-600 font-mono">
+                  {(tier.chance * 100).toFixed(0)}%
+                </span>
+              </motion.div>
+            ))}
+          </div>
+        </Section>
+
+        {/* ─── Cult Ranks ─── */}
+        <Section className="mt-16 sm:mt-24" delay={0.1}>
+          <h2 className="text-[11px] tracking-[4px] uppercase font-mono text-gray-600 mb-6 text-center">
+            Cult Ranks
+          </h2>
+          <p className="text-sm text-gray-500 text-center mb-8 max-w-md mx-auto">
+            Your rank reflects your devotion. Collect glyphs to ascend.
+          </p>
+
+          <div className="space-y-2 max-w-sm mx-auto">
+            {CULT_RANKS.map((rank) => (
+              <div
+                key={rank.name}
+                className="flex items-center justify-between px-3 py-2 rounded-lg"
+                style={{
+                  background: `${rank.color}08`,
+                  border: `1px solid ${rank.color}22`,
+                }}
+              >
+                <span
+                  className="text-xs sm:text-sm font-serif"
+                  style={{ color: rank.color }}
+                >
+                  {rank.name}
+                </span>
+                <span className="text-[10px] font-mono text-gray-600">
+                  {rank.minGlyphs === 0 ? "Start" : `${rank.minGlyphs} glyphs`}
+                </span>
+              </div>
+            ))}
+          </div>
+        </Section>
+
+        {/* ─── Why This Exists ─── */}
+        <Section className="mt-16 sm:mt-24" delay={0.1}>
+          <h2 className="text-[11px] tracking-[4px] uppercase font-mono text-gray-600 mb-6 text-center">
+            Why
+          </h2>
+          <div className="space-y-4 text-sm sm:text-base text-gray-400 font-serif leading-relaxed text-center max-w-lg mx-auto">
+            <p>
+              The feedback loop is the point. The glyph gacha, the cult ranks,
+              the collective portal progress. It&apos;s designed to be slightly
+              addicting because the best games are.
+            </p>
+            <p>
+              We didn&apos;t build another yield farm or another governance token.
+              We built a game &mdash; one that rewards coordination, creates shared
+              moments, and gives you something tangible for showing up.
+            </p>
+            <p className="text-gray-500">
+              Everything is on-chain. Glyphs are ERC-1155 NFTs with provably fair
+              VRF randomness. Artifacts are on-chain. The minting curve is transparent
+              and deterministic. No hidden servers deciding your fate. No rug vectors.
+              Just a portal, a void, and whatever is on the other side.
+            </p>
+          </div>
+        </Section>
+
+        {/* ─── Fully On-Chain ─── */}
+        <Section className="mt-16 sm:mt-24" delay={0.1}>
+          <div
+            className="rounded-xl p-5 sm:p-8 text-center"
+            style={{
+              background: "linear-gradient(135deg, #4c1d9515, #7c3aed10)",
+              border: "1px solid #7c3aed22",
+            }}
+          >
+            <h3 className="text-[10px] tracking-[3px] uppercase font-mono text-gray-600 mb-4">
+              Fully On-Chain
+            </h3>
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 text-center">
+              {[
+                { label: "Minting Curve", detail: "Deterministic pricing" },
+                { label: "Glyph Tiers", detail: "Chainlink VRF" },
+                { label: "Artifacts", detail: "ERC-1155 NFTs" },
+                { label: "Epoch Logic", detail: "Smart contracts" },
+              ].map((item) => (
+                <div key={item.label}>
+                  <div className="text-xs sm:text-sm text-ritual-light font-serif">
+                    {item.label}
+                  </div>
+                  <div className="text-[9px] sm:text-[10px] text-gray-600 font-mono mt-0.5">
+                    {item.detail}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        </Section>
+
+        {/* ─── CTA ─── */}
+        <Section className="mt-16 sm:mt-24 mb-12 sm:mb-16 text-center" delay={0.1}>
+          <p className="text-sm text-gray-600 font-mono tracking-wide mb-6">
+            The portal is open. The Old Ones are waiting.
+          </p>
+          <Link
+            href="/"
+            className="btn-sacrifice inline-block px-10 sm:px-14 py-4 text-sm sm:text-base no-underline"
+          >
+            Enter the Ritual
+          </Link>
+          <p className="text-[9px] text-gray-700 font-mono tracking-wider mt-4">
+            &ldquo;That is not dead which can eternal lie&rdquo;
+          </p>
+        </Section>
+      </div>
+    </div>
+  );
+}

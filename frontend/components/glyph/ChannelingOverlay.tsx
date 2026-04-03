@@ -38,57 +38,59 @@ export default function ChannelingOverlay() {
           animate={{ opacity: 1 }}
           exit={{ opacity: 0 }}
           transition={{ duration: 0.5 }}
-          className="fixed inset-0 z-40 flex items-center justify-center pointer-events-none"
-          style={{
-            background: "rgba(0,0,0,0.7)",
-            backdropFilter: "blur(4px)",
-          }}
+          className="fixed bottom-6 right-6 z-40 pointer-events-none sm:bottom-8 sm:right-8"
         >
           <motion.div
             initial={{ scale: 0.8, opacity: 0 }}
             animate={{ scale: 1, opacity: 1 }}
             exit={{ scale: 0.8, opacity: 0 }}
-            className="text-center p-8 sm:p-10"
+            className="text-center p-4 sm:p-5 rounded-xl"
+            style={{
+              background: "rgba(13, 13, 21, 0.95)",
+              border: "1px solid #7c3aed44",
+              boxShadow: "0 0 40px #7c3aed22, 0 4px 20px rgba(0,0,0,0.5)",
+              backdropFilter: "blur(8px)",
+            }}
           >
-            {/* Spinning channeling symbol */}
-            <motion.div
-              animate={{ rotate: 360 }}
-              transition={{ repeat: Infinity, duration: 3, ease: "linear" }}
-              className="text-6xl sm:text-7xl mb-6"
-              style={{
-                color: "#7c3aed",
-                filter: "drop-shadow(0 0 30px rgba(124, 58, 237, 0.5))",
-              }}
-            >
-              ✦
-            </motion.div>
+            <div className="flex items-center gap-3">
+              {/* Spinning channeling symbol */}
+              <motion.div
+                animate={{ rotate: 360 }}
+                transition={{ repeat: Infinity, duration: 3, ease: "linear" }}
+                className="text-2xl sm:text-3xl"
+                style={{
+                  color: "#7c3aed",
+                  filter: "drop-shadow(0 0 15px rgba(124, 58, 237, 0.5))",
+                }}
+              >
+                ✦
+              </motion.div>
 
-            {/* Pulsing inner glow */}
-            <motion.div
-              animate={{ opacity: [0.3, 0.7, 0.3] }}
-              transition={{ repeat: Infinity, duration: 2, ease: "easeInOut" }}
-              className="text-[11px] sm:text-xs tracking-[4px] uppercase font-serif text-purple-400 mb-3"
-            >
-              CHANNELING
-            </motion.div>
+              <div className="text-left">
+                {/* Pulsing label */}
+                <motion.div
+                  animate={{ opacity: [0.4, 0.8, 0.4] }}
+                  transition={{ repeat: Infinity, duration: 2, ease: "easeInOut" }}
+                  className="text-[10px] sm:text-[11px] tracking-[3px] uppercase font-serif text-purple-400"
+                >
+                  CHANNELING
+                </motion.div>
 
-            <motion.div
-              animate={{ opacity: [0.5, 1, 0.5] }}
-              transition={{ repeat: Infinity, duration: 3, ease: "easeInOut" }}
-              className="text-[11px] sm:text-xs text-gray-400 italic max-w-[260px] mx-auto"
-            >
-              &ldquo;{CHANNELING_MESSAGES[messageIndex]}&rdquo;
-            </motion.div>
+                <motion.div
+                  animate={{ opacity: [0.5, 1, 0.5] }}
+                  transition={{ repeat: Infinity, duration: 3, ease: "easeInOut" }}
+                  className="text-[10px] text-gray-500 italic max-w-[200px]"
+                >
+                  &ldquo;{CHANNELING_MESSAGES[messageIndex]}&rdquo;
+                </motion.div>
+              </div>
+            </div>
 
             {pendingGlyphs.length > 1 && (
-              <div className="text-[10px] text-gray-600 mt-4 tracking-[2px]">
+              <div className="text-[9px] text-gray-600 mt-2 tracking-[2px]">
                 {pendingGlyphs.length} GLYPHS PENDING
               </div>
             )}
-
-            <div className="text-[9px] text-gray-700 mt-4 tracking-[1px]">
-              AWAITING VRF CALLBACK...
-            </div>
           </motion.div>
         </motion.div>
       )}

@@ -102,7 +102,7 @@ export default function SacrificePanel({ epoch }: { epoch: EpochData }) {
           <button
             key={qa.value}
             onClick={() => setAmount(qa.value)}
-            className={`btn-quick ${amount === qa.value ? "border-accent" : ""}`}
+            className={`btn-quick ${amount === qa.value ? "btn-quick-active" : "btn-quick-inactive"}`}
           >
             {qa.label}
           </button>
@@ -131,8 +131,20 @@ export default function SacrificePanel({ epoch }: { epoch: EpochData }) {
 
       {/* Success feedback */}
       {sacrificeSuccess && (
-        <div className="text-[10px] text-purple-400 text-center mt-2 tracking-wider">
-          VRF requested — channeling your glyph...
+        <div
+          className="text-center mt-3 py-3 rounded-lg animate-fade-in"
+          style={{
+            background: "linear-gradient(135deg, #4c1d9522, #7c3aed22)",
+            border: "1px solid #7c3aed44",
+            boxShadow: "0 0 30px #7c3aed22",
+          }}
+        >
+          <div className="text-sm text-ritual-light font-serif tracking-wide">
+            The void accepts your offering
+          </div>
+          <div className="text-[10px] text-gray-500 mt-1 font-mono tracking-wider">
+            VRF requested — channeling your glyph...
+          </div>
         </div>
       )}
     </div>
