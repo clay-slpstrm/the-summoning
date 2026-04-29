@@ -11,6 +11,7 @@ import EpochStatus from "@/components/epoch/EpochStatus";
 import CultRankBar from "@/components/rank/CultRankBar";
 import Leaderboard from "@/components/rank/Leaderboard";
 import SacrificePanel from "@/components/sacrifice/SacrificePanel";
+import ClaimArtifact from "@/components/claim/ClaimArtifact";
 import { useGlyphs } from "@/hooks/useGlyphs";
 import { useEpochProgress } from "@/hooks/useEpochProgress";
 import { useUIStore } from "@/stores/uiStore";
@@ -61,7 +62,7 @@ export default function Home() {
             <div className="flex items-center justify-center gap-4 mt-4">
               <Link
                 href="/about"
-                className="text-[10px] sm:text-[11px] tracking-[2px] uppercase font-mono text-gray-500 hover:text-ritual-light transition-colors underline underline-offset-4 decoration-void-border hover:decoration-ritual/50"
+                className="text-[12px] sm:text-[13px] tracking-[2px] uppercase font-mono text-gray-400 hover:text-ritual-light transition-colors underline underline-offset-4 decoration-void-border hover:decoration-ritual/50"
               >
                 How it works
               </Link>
@@ -91,15 +92,17 @@ export default function Home() {
           <EpochStatus />
         </div>
 
-        {/* Sacrifice panel — always show during Ritual, show guidance otherwise */}
+        {/* Sacrifice / Claim panel — depends on epoch phase */}
         {address && epoch && (
           <div className="max-w-md mx-auto mt-6 sm:mt-8">
             {epoch.phase === "Ritual" ? (
               <SacrificePanel epoch={epoch} />
+            ) : epoch.phase === "Resolved" ? (
+              <ClaimArtifact epoch={epoch} />
             ) : epoch.phase === "Gathering" ? (
               <div className="card text-center py-6 space-y-2">
                 <div className="section-label">Sacrifice opens soon</div>
-                <p className="text-xs sm:text-sm text-gray-500 italic">
+                <p className="text-xs sm:text-sm text-gray-300 italic">
                   The gathering phase is active. Mint your $RITUAL tokens now — when the ritual phase begins, you&apos;ll sacrifice them to receive on-chain glyphs.
                 </p>
               </div>

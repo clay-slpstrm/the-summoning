@@ -12,13 +12,16 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { useAccount } from "wagmi";
+import { useAccount, useReadContract } from "wagmi";
+import { sepolia } from "wagmi/chains";
 import { parseEther, formatEther } from "viem";
 import {
   useCommitRitual,
   useApproveRitual,
   useRitualAllowance,
 } from "@/hooks/useSummoning";
+import { SUMMONING_ENGINE_ADDRESS, SUMMONING_ENGINE_ABI } from "@/lib/contracts";
+import { CONTRACT_PARAMS } from "@/lib/constants";
 import type { EpochData } from "@/hooks/useEpochProgress";
 
 const QUICK_AMOUNTS = [
@@ -36,12 +39,44 @@ export default function SacrificePanel({ epoch }: { epoch: EpochData }) {
   const { approve, isPending: isApproving, isConfirming: isApproveConfirming, isSuccess: approveSuccess } = useApproveRitual();
   const { data: allowance, refetch: refetchAllowance } = useRitualAllowance(address);
 
+  // Cooldown — preempt SACRIFICE_COOLDOWN (30s) on-chain revert.
+  const { data: lastSacrificeTime, refetch: refetchCooldown } = useReadContract({
+    address: SUMMONING_ENGINE_ADDRESS,
+    abi: SUMMONING_ENGINE_ABI,
+    functionName: "lastSacrificeTime",
+    args: address ? [address] : undefined,
+    chainId: sepolia.id,
+    query: { enabled: !!address },
+  });
+
+  const cooldownEnd =
+    lastSacrificeTime !== undefined
+      ? Number(lastSacrificeTime) + CONTRACT_PARAMS.SACRIFICE_COOLDOWN
+      : 0;
+
+  const [now, setNow] = useState(() => Math.floor(Date.now() / 1000));
+  const cooldownRemaining = Math.max(0, cooldownEnd - now);
+  const isCooldown = cooldownRemaining > 0;
+
+  useEffect(() => {
+    if (!isCooldown) return;
+    const id = setInterval(() => setNow(Math.floor(Date.now() / 1000)), 1000);
+    return () => clearInterval(id);
+  }, [isCooldown]);
+
   // Refetch allowance after successful approve
   useEffect(() => {
     if (approveSuccess) {
       refetchAllowance();
     }
   }, [approveSuccess, refetchAllowance]);
+
+  // Refetch cooldown after a successful sacrifice — kicks the countdown immediately.
+  useEffect(() => {
+    if (sacrificeSuccess) {
+      refetchCooldown();
+    }
+  }, [sacrificeSuccess, refetchCooldown]);
 
   if (!address) return null;
   if (epoch.phase !== "Ritual") return null;
@@ -59,7 +94,7 @@ export default function SacrificePanel({ epoch }: { epoch: EpochData }) {
   const isBusy = isSacrificing || isSacrificeConfirming || isApproving || isApproveConfirming;
 
   const handleSacrifice = () => {
-    if (!isValidAmount || isBusy) return;
+    if (!isValidAmount || isBusy || isCooldown) return;
     if (needsApproval) {
       approve();
     } else {
@@ -72,6 +107,7 @@ export default function SacrificePanel({ epoch }: { epoch: EpochData }) {
     if (isApproveConfirming) return "APPROVING...";
     if (isSacrificing) return "CONFIRM IN WALLET...";
     if (isSacrificeConfirming) return "SACRIFICING...";
+    if (isCooldown) return `WAIT ${cooldownRemaining}s`;
     if (sacrificeSuccess) return "SACRIFICE ACCEPTED";
     if (needsApproval) return "APPROVE & SACRIFICE";
     return "SACRIFICE $RITUAL";
@@ -111,7 +147,7 @@ export default function SacrificePanel({ epoch }: { epoch: EpochData }) {
 
       {/* Minimum warning */}
       {amount && !isValidAmount && amountWei > 0n && (
-        <div className="text-[10px] text-red-400 mt-2">
+        <div className="text-[14px] text-red-400 mt-2">
           Minimum sacrifice: 100 $RITUAL
         </div>
       )}
@@ -119,11 +155,11 @@ export default function SacrificePanel({ epoch }: { epoch: EpochData }) {
       {/* Sacrifice button */}
       <button
         onClick={handleSacrifice}
-        disabled={!isValidAmount || isBusy}
+        disabled={!isValidAmount || isBusy || isCooldown}
         className="btn-sacrifice w-full mt-4"
         style={{
-          opacity: !isValidAmount || isBusy ? 0.5 : 1,
-          cursor: !isValidAmount || isBusy ? "not-allowed" : "pointer",
+          opacity: !isValidAmount || isBusy || isCooldown ? 0.5 : 1,
+          cursor: !isValidAmount || isBusy || isCooldown ? "not-allowed" : "pointer",
         }}
       >
         {buttonText}
@@ -142,7 +178,7 @@ export default function SacrificePanel({ epoch }: { epoch: EpochData }) {
           <div className="text-sm text-ritual-light font-serif tracking-wide">
             The void accepts your offering
           </div>
-          <div className="text-[10px] text-gray-500 mt-1 font-mono tracking-wider">
+          <div className="text-[14px] text-gray-400 mt-1 font-mono tracking-wider">
             VRF requested — channeling your glyph...
           </div>
         </div>

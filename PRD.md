@@ -201,12 +201,12 @@ Player wants another pull → Repeat
   - **Approving**: "APPROVE & SACRIFICE" / "CONFIRM IN WALLET..."
   - **Sacrificing**: "SACRIFICING..." with loading animation
   - **Success**: "SACRIFICE ACCEPTED" briefly, then resets
-  - **Cooldown**: Dimmed, shows countdown timer (30 seconds)
+  - **Cooldown**: Dimmed/disabled, button reads "WAIT Xs" with live countdown until 30s elapses since the wallet's last sacrifice. UI preempts the on-chain revert by reading `lastSacrificeTime(wallet)`.
   - **Disabled**: Gray, insufficient balance or wrong epoch phase
 - After sacrifice tx confirms: "VRF requested — channeling your glyph..." text appears
 - Full-screen ChannelingOverlay activates during Chainlink VRF wait (~30-60s)
 - VRF callback triggers GlyphReveal overlay via WebSocket `glyph_reveal`
-- Cooldown: 30 seconds between sacrifices (enforced on-chain, reflected in UI)
+- Cooldown: 30 seconds between sacrifices (enforced on-chain via `SACRIFICE_COOLDOWN`, preempted in UI to avoid wasted wallet prompts)
 - Only visible during Ritual phase (hidden otherwise)
 - Error states: insufficient balance, cooldown active, epoch not in Ritual phase, user rejected tx
 
@@ -339,7 +339,27 @@ Player wants another pull → Repeat
 
 ---
 
-### 4.9 F9: Artifact Gallery
+### 4.9 F9: Claim Artifact
+
+**Description**: After an epoch resolves, contributors claim a tiered ERC-1155 artifact reward. Failed epochs yield a "Shattered Ritual"; successful epochs distribute Harbinger / Acolyte / Cultist by contribution share.
+
+**User Story**: As a user who contributed to a resolved epoch, I want to claim my artifact directly from the main page without navigating elsewhere or guessing my tier.
+
+**Acceptance Criteria**:
+- Card renders only when `epoch.phase === "Resolved"` and the connected wallet has a non-zero `getContribution(epochId, wallet)`.
+- Replaces the SacrificePanel slot during the Resolved phase (same column position).
+- Predicts tier client-side using the contract's `_calculateTier` formula (avg = totalCommitted / participantCount; ≥10× avg → Harbinger, ≥3× avg → Acolyte, else Cultist; failed epochs → Shattered).
+- Shows: predicted tier name (heading), tier flavor copy, the user's contribution amount, and the epoch outcome (✦ Summoned / ✕ Failed).
+- Button calls `claimReward(epochId)` and progresses through "Confirm in wallet..." → "Claiming..." → success state.
+- Success state is sticky for the session: shows tier name, flavor, and the artifact's ERC-1155 token ID (`epochId * 1000 + tierId`). After page reload, the contribution is zero on-chain and the card hides.
+- Tier coloring matches in-game palette: Shattered #6B7280, Harbinger #F59E0B, Acolyte #A855F7, Cultist #4A9EFF.
+- Empty state: nothing rendered. Users who didn't contribute see no claim card.
+
+**Priority**: P0 — Launch (closes the macro loop)
+
+---
+
+### 4.10 F10: Artifact Gallery
 
 **Description**: Display of user's ERC-1155 artifact holdings from successful summonings.
 
@@ -357,7 +377,7 @@ Player wants another pull → Repeat
 
 ---
 
-### 4.10 F10: Social Share Card
+### 4.11 F11: Social Share Card
 
 **Description**: One-tap share functionality for rare glyph pulls.
 
@@ -374,7 +394,7 @@ Player wants another pull → Repeat
 
 ---
 
-### 4.11 F11: Lore Introduction
+### 4.12 F12: Lore Introduction
 
 **Description**: Brief atmospheric lore introduction for first-time visitors.
 
@@ -537,9 +557,9 @@ Background:     #0a0a0f (near-black with blue undertone)
 Surface:        #0d0d15 (card backgrounds)
 Surface Raised: #111118 (input backgrounds, stat boxes)
 Border:         #1e1e2e (subtle purple-gray borders)
-Text Primary:   #e2e8f0 (light gray-white)
-Text Secondary: #6b7280 (muted gray)
-Text Muted:     #4b5563 (very muted, hints and footnotes)
+Text Primary:   #e2e8f0 (light gray-white — body, labels, values)
+Text Secondary: #cbd5e1 (slate-300 — sub-labels, contextual data)
+Text Muted:     #9ca3af (gray-400 — ambient decoration only, never primary info)
 Accent Primary: #7c3aed (ritual purple — buttons, glows, portal)
 Accent Deep:    #4c1d95 (deep purple — gradients, backgrounds)
 Accent Light:   #c4b5fd (light lavender — headings, highlights)
@@ -547,13 +567,15 @@ Danger/Breach:  #EF4444 (red — breach tier, warnings)
 Gold/Rupture:   #F59E0B (gold — legendary tier)
 ```
 
+**Contrast contract**: Primary and Secondary text must measure ≥7:1 against `#0a0a0f`. The previous secondary value (`#6b7280`) measured ~4:1 and made labels feel washed-out at small sizes; it was promoted out of the label tier and is no longer used in component styling. The Tailwind `gray` palette is shifted in `tailwind.config.ts` so `text-gray-500/600` resolves to `#e2e8f0` and `text-gray-700` resolves to `#cbd5e1` — components written against those classes inherit the brighter values automatically.
+
 ### 8.3 Typography
 
 - **Headings / Title**: `'Crimson Text', 'Georgia', serif` — Occult-feeling serif with good readability
 - **Body text**: Same serif family for immersive consistency
 - **Monospace (UI labels, stats, code-like elements)**: `'Courier New', monospace`
 - **Title treatment**: All-caps, letter-spacing: 6px, text-shadow with purple glow
-- **Section labels**: All-caps, letter-spacing: 2–3px, 10–11px size, monospace, secondary color
+- **Section labels**: All-caps, letter-spacing: 2–3px, **14px (mobile 13px)**, monospace, **bold**, primary text color (`#e2e8f0`). Floor for any informational label is **13px** — never smaller, regardless of context. Sub-12px sizing is reserved for ambient decoration on colored chips/badges only.
 
 ### 8.4 Component Style Patterns
 

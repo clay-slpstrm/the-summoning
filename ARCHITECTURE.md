@@ -131,7 +131,7 @@ the-summoning/
 │   │   └── globals.css
 │   ├── components/
 │   │   ├── providers/
-│   │   │   ├── WalletProvider.tsx
+│   │   │   ├── WalletProvider.tsx    # RainbowKit theme + GlyphAvatar
 │   │   │   └── WebSocketProvider.tsx
 │   │   ├── portal/
 │   │   │   ├── Portal.tsx       # SVG portal visualization
@@ -140,17 +140,21 @@ the-summoning/
 │   │   │   ├── SacrificePanel.tsx
 │   │   │   ├── AmountSlider.tsx
 │   │   │   └── SacrificeButton.tsx
+│   │   ├── claim/
+│   │   │   └── ClaimArtifact.tsx     # Post-resolution artifact claim card
 │   │   ├── glyph/
-│   │   │   ├── GlyphReveal.tsx      # Full-screen gacha reveal
+│   │   │   ├── GlyphReveal.tsx       # Full-screen gacha reveal
 │   │   │   ├── ChannelingOverlay.tsx # VRF wait animation
 │   │   │   ├── GlyphCollection.tsx
-│   │   │   └── GlyphCard.tsx
+│   │   │   ├── GlyphCard.tsx
+│   │   │   └── GlyphTierBadge.tsx
 │   │   ├── epoch/
 │   │   │   ├── EpochStatus.tsx
 │   │   │   ├── ProgressBar.tsx
 │   │   │   └── Countdown.tsx
 │   │   ├── rank/
 │   │   │   ├── CultRankBar.tsx
+│   │   │   ├── Leaderboard.tsx
 │   │   │   └── RankBadge.tsx
 │   │   ├── mint/
 │   │   │   ├── MintInterface.tsx
@@ -1006,9 +1010,18 @@ export async function updateCultRank(wallet: string) {
 #### SacrificePanel.tsx
 - Amount input field with quick-select buttons: 100, 500, 1000 $RITUAL (uses `btn-quick-active`/`btn-quick-inactive` classes)
 - Checks allowance → prompts `approve()` if needed → calls `commitRitual(amount)`
-- Button states: "APPROVE & SACRIFICE" / "CONFIRM IN WALLET..." / "SACRIFICING..." / "SACRIFICE ACCEPTED"
-- Only visible during Ritual phase. During Gathering phase, `page.tsx` shows guidance text ("Sacrifice opens soon") in its place
+- Button states: "APPROVE & SACRIFICE" / "CONFIRM IN WALLET..." / "SACRIFICING..." / "SACRIFICE ACCEPTED" / "WAIT Xs" (cooldown)
+- Reads `lastSacrificeTime(wallet)` from SummoningEngine to preempt the on-chain `SACRIFICE_COOLDOWN` (30s). When the wallet is inside the cooldown window, the button is disabled and shows a live countdown derived from a 1s-tick `setInterval`. Prevents users from signing a tx that will revert.
+- Only visible during Ritual phase. During Gathering phase, `page.tsx` shows guidance text ("Sacrifice opens soon"); during Resolved phase it's replaced by `ClaimArtifact`.
 - After success, shows a glowing container: "The void accepts your offering" + "VRF requested — channeling your glyph..." while ChannelingOverlay activates
+
+#### ClaimArtifact.tsx
+- Renders only when `epoch.phase === "Resolved"` and the connected wallet has a non-zero `getContribution(epochId, wallet)` from SummoningEngine.
+- Mirrors the contract's `_calculateTier` formula client-side to predict the tier the user will receive: `avg = totalCommitted / participantCount`; `contribution >= avg * 10` → Harbinger (1), `>= avg * 3` → Acolyte (2), else Cultist (3); failed epochs always → Shattered Ritual (0).
+- Calls `useClaimReward(epochId)` from `useSummoning.ts`. Progresses through "Confirm in wallet..." → "Claiming..." → success state.
+- Success state is sticky for the session: shows tier name, flavor copy, ERC-1155 token ID (`epochId * 1000 + tierId`). On reload, the on-chain contribution reads as 0 (zeroed by the contract on claim) and the card hides naturally.
+- Tier coloring: Shattered #6B7280, Harbinger #F59E0B, Acolyte #A855F7, Cultist #4A9EFF — matched to in-game palette. Card border, glow, and CTA gradient all derive from tier color.
+- Mounted in `page.tsx` in the same column slot as `SacrificePanel`, switched by `epoch.phase`.
 
 #### GlyphCollection.tsx
 - CSS Grid: `repeat(auto-fill, minmax(44px, 1fr))`
@@ -1072,6 +1085,10 @@ export async function updateCultRank(wallet: string) {
 6. On sacrifice tx submitted: show "Channeling..." state
 7. On tx confirmed: WebSocket delivers glyph → trigger GlyphReveal overlay
 ```
+
+**RainbowKit theming (`WalletProvider.tsx`)**: The default RainbowKit chrome is overridden with a custom theme matching The Summoning palette. Built on `darkTheme()` with `accentColor: #7c3aed`, `fontStack: "system"`, and the full color object overridden — modal background `#0d0d15`, modal border `#1e1e2e`, modal text `#e2e8f0`, profile action hover `#2d1b4e` (ritual-dark), connection indicator `#7c3aed`. Modal font is set to Crimson Text for visual continuity with the app.
+
+**Custom avatar (`GlyphAvatar`)**: Replaces RainbowKit's default emoji avatar with a deterministic glyph sigil derived from the wallet address — first hex byte selects tier color (Whisper / Echo / Tremor / Rupture / Breach from `GLYPH_TIERS`), second byte selects rune from `RUNE_SHAPES`. Rendered as a circular cell with the tier's gradient background, border, glow, and dropshadow — visually consistent with in-app glyph cells. Falls through to ENS avatar image when one is set.
 
 ### 5.4 WebSocket Client + Glyph Hydration
 
