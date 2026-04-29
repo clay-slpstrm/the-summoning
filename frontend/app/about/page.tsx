@@ -58,7 +58,7 @@ export default function AboutPage() {
         {/* Back nav */}
         <Link
           href="/"
-          className="inline-flex items-center gap-2 text-[10px] sm:text-[11px] tracking-[2px] uppercase font-mono text-gray-600 hover:text-ritual-light transition-colors mb-10 sm:mb-14"
+          className="inline-flex items-center gap-2 text-[12px] sm:text-[13px] tracking-[2px] uppercase font-mono text-gray-300 hover:text-ritual-light transition-colors mb-10 sm:mb-14 font-bold"
         >
           <span>&larr;</span> Back to the Ritual
         </Link>
@@ -78,7 +78,7 @@ export default function AboutPage() {
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             transition={{ duration: 0.6, delay: 0.3 }}
-            className="text-center text-gray-500 font-mono text-[10px] sm:text-[11px] tracking-[3px] uppercase mt-3"
+            className="text-center text-gray-300 font-mono text-[12px] sm:text-[13px] tracking-[3px] uppercase mt-3 font-bold"
           >
             A Lovecraftian Onchain Coordination Game
           </motion.p>
@@ -103,7 +103,7 @@ export default function AboutPage() {
 
         {/* ─── How It Works ─── */}
         <Section className="mt-16 sm:mt-24" delay={0.1}>
-          <h2 className="text-[11px] tracking-[4px] uppercase font-mono text-gray-600 mb-8 text-center">
+          <h2 className="text-[13px] sm:text-[14px] tracking-[4px] uppercase font-mono text-gray-300 font-bold mb-8 text-center">
             The Ritual, Explained
           </h2>
 
@@ -156,7 +156,7 @@ export default function AboutPage() {
                   <h3 className="text-base sm:text-lg font-serif text-gray-200">
                     {item.title}
                   </h3>
-                  <p className="text-sm text-gray-500 mt-1 leading-relaxed">
+                  <p className="text-sm sm:text-base text-gray-300 mt-1 leading-relaxed">
                     {item.desc}
                   </p>
                 </div>
@@ -167,10 +167,10 @@ export default function AboutPage() {
 
         {/* ─── Glyph Tiers ─── */}
         <Section className="mt-16 sm:mt-24" delay={0.1}>
-          <h2 className="text-[11px] tracking-[4px] uppercase font-mono text-gray-600 mb-6 text-center">
+          <h2 className="text-[13px] sm:text-[14px] tracking-[4px] uppercase font-mono text-gray-300 font-bold mb-6 text-center">
             Eldritch Glyphs
           </h2>
-          <p className="text-sm text-gray-500 text-center mb-8 max-w-md mx-auto">
+          <p className="text-sm sm:text-base text-gray-300 text-center mb-8 max-w-md mx-auto">
             Every sacrifice mints a glyph. Tier is determined by Chainlink VRF &mdash;
             provably fair, fully on-chain. No server decides your fate.
           </p>
@@ -196,12 +196,12 @@ export default function AboutPage() {
                   </span>
                 </div>
                 <span
-                  className="text-[9px] sm:text-[10px] font-mono tracking-wider"
+                  className="text-[11px] sm:text-[12px] font-mono tracking-wider font-bold"
                   style={{ color: tier.color }}
                 >
                   {tier.name}
                 </span>
-                <span className="text-[8px] text-gray-600 font-mono">
+                <span className="text-[11px] text-gray-300 font-mono">
                   {(tier.chance * 100).toFixed(0)}%
                 </span>
               </motion.div>
@@ -211,10 +211,10 @@ export default function AboutPage() {
 
         {/* ─── Cult Ranks ─── */}
         <Section className="mt-16 sm:mt-24" delay={0.1}>
-          <h2 className="text-[11px] tracking-[4px] uppercase font-mono text-gray-600 mb-6 text-center">
+          <h2 className="text-[13px] sm:text-[14px] tracking-[4px] uppercase font-mono text-gray-300 font-bold mb-6 text-center">
             Cult Ranks
           </h2>
-          <p className="text-sm text-gray-500 text-center mb-8 max-w-md mx-auto">
+          <p className="text-sm sm:text-base text-gray-300 text-center mb-8 max-w-md mx-auto">
             Your rank reflects your devotion. Collect glyphs to ascend.
           </p>
 
@@ -234,7 +234,7 @@ export default function AboutPage() {
                 >
                   {rank.name}
                 </span>
-                <span className="text-[10px] font-mono text-gray-600">
+                <span className="text-[12px] font-mono text-gray-300">
                   {rank.minGlyphs === 0 ? "Start" : `${rank.minGlyphs} glyphs`}
                 </span>
               </div>
@@ -244,7 +244,7 @@ export default function AboutPage() {
 
         {/* ─── Why This Exists ─── */}
         <Section className="mt-16 sm:mt-24" delay={0.1}>
-          <h2 className="text-[11px] tracking-[4px] uppercase font-mono text-gray-600 mb-6 text-center">
+          <h2 className="text-[13px] sm:text-[14px] tracking-[4px] uppercase font-mono text-gray-300 font-bold mb-6 text-center">
             Why
           </h2>
           <div className="space-y-4 text-sm sm:text-base text-gray-400 font-serif leading-relaxed text-center max-w-lg mx-auto">
@@ -276,7 +276,7 @@ export default function AboutPage() {
               border: "1px solid #7c3aed22",
             }}
           >
-            <h3 className="text-[10px] tracking-[3px] uppercase font-mono text-gray-600 mb-4">
+            <h3 className="text-[12px] sm:text-[13px] tracking-[3px] uppercase font-mono text-gray-300 mb-4 font-bold">
               Fully On-Chain
             </h3>
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 text-center">
@@ -290,7 +290,7 @@ export default function AboutPage() {
                   <div className="text-xs sm:text-sm text-ritual-light font-serif">
                     {item.label}
                   </div>
-                  <div className="text-[9px] sm:text-[10px] text-gray-600 font-mono mt-0.5">
+                  <div className="text-[11px] sm:text-[12px] text-gray-300 font-mono mt-0.5">
                     {item.detail}
                   </div>
                 </div>
@@ -301,7 +301,7 @@ export default function AboutPage() {
 
         {/* ─── CTA ─── */}
         <Section className="mt-16 sm:mt-24 mb-12 sm:mb-16 text-center" delay={0.1}>
-          <p className="text-sm text-gray-600 font-mono tracking-wide mb-6">
+          <p className="text-sm sm:text-base text-gray-300 font-mono tracking-wide mb-6">
             The portal is open. The Old Ones are waiting.
           </p>
           <Link
@@ -310,7 +310,7 @@ export default function AboutPage() {
           >
             Enter the Ritual
           </Link>
-          <p className="text-[9px] text-gray-700 font-mono tracking-wider mt-4">
+          <p className="text-[11px] text-gray-400 font-mono tracking-wider mt-4 italic">
             &ldquo;That is not dead which can eternal lie&rdquo;
           </p>
         </Section>

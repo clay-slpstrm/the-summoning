@@ -63,15 +63,15 @@ export default function Leaderboard() {
                 }}
               >
                 {/* Position */}
-                <div className="text-[10px] sm:text-[11px] font-mono text-gray-600 w-4 sm:w-5 text-right">
+                <div className="text-[14px] sm:text-[15px] font-mono text-gray-600 w-4 sm:w-5 text-right">
                   {i + 1}
                 </div>
 
                 {/* Wallet */}
-                <div className="flex-1 font-mono text-[11px] sm:text-[12px] text-gray-400 min-w-0">
+                <div className="flex-1 font-mono text-[14px] sm:text-[15px] text-gray-200 min-w-0">
                   {shortAddr(entry.walletAddr)}
                   {isMe && (
-                    <span className="ml-1 sm:ml-1.5 text-[8px] sm:text-[9px] tracking-widest" style={{ color: rank.color }}>
+                    <span className="ml-1 sm:ml-1.5 text-[10px] sm:text-[11px] tracking-widest" style={{ color: rank.color }}>
                       YOU
                     </span>
                   )}
@@ -79,14 +79,14 @@ export default function Leaderboard() {
 
                 {/* Rank name — hidden on very small screens */}
                 <div
-                  className="hidden sm:block text-[10px] tracking-[1px] font-mono"
+                  className="hidden sm:block text-[13px] tracking-[1px] font-mono"
                   style={{ color: rank.color }}
                 >
                   {entry.rankName}
                 </div>
 
                 {/* Glyph count — with rank color dot on mobile to replace hidden rank name */}
-                <div className="text-[10px] sm:text-[11px] font-mono text-gray-500 w-10 sm:w-12 text-right flex items-center justify-end gap-1">
+                <div className="text-[14px] sm:text-[15px] font-mono text-gray-500 w-10 sm:w-12 text-right flex items-center justify-end gap-1">
                   <span
                     className="inline-block w-1.5 h-1.5 rounded-full sm:hidden"
                     style={{ background: rank.color }}

@@ -14,7 +14,7 @@ export default function ProgressBar({ progress }: { progress: number }) {
 
   return (
     <div>
-      <div className="flex justify-between text-[10px] font-mono text-gray-500 mb-1">
+      <div className="flex justify-between text-[14px] font-mono text-gray-300 mb-1.5 font-bold">
         <span>COLLECTIVE PROGRESS</span>
         <span style={{ color }}>{progress.toFixed(1)}%</span>
       </div>

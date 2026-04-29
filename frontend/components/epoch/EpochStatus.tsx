@@ -43,8 +43,8 @@ export default function EpochStatus() {
   if (error) {
     return (
       <div className="card text-center py-8">
-        <div className="text-[10px] font-mono text-red-500/60">RPC error — retrying</div>
-        <div className="text-[9px] font-mono text-gray-700 mt-1 break-all">{error.slice(0, 80)}</div>
+        <div className="text-[12px] font-mono text-red-500/80">RPC error — retrying</div>
+        <div className="text-[11px] font-mono text-gray-500 mt-1 break-all">{error.slice(0, 80)}</div>
       </div>
     );
   }
@@ -70,19 +70,19 @@ export default function EpochStatus() {
     <div className="card space-y-3 sm:space-y-4">
       {/* Old One identity */}
       <div>
-        <div className="text-[9px] sm:text-[10px] tracking-[2px] sm:tracking-[3px] uppercase font-mono text-gray-600">
+        <div className="text-[13px] sm:text-[14px] tracking-[2px] sm:tracking-[3px] uppercase font-mono text-gray-300 font-bold">
           Epoch {epoch.epochId}
         </div>
         <div className="font-heading text-xl sm:text-2xl text-gray-100 mt-0.5">
           {epoch.oldOneName}
         </div>
-        <div className="text-[11px] sm:text-xs text-gray-500 italic">{epoch.oldOneSubtitle}</div>
+        <div className="text-sm sm:text-base text-gray-500 italic">{epoch.oldOneSubtitle}</div>
       </div>
 
       {/* Phase badge + countdown */}
       <div className="flex items-center justify-between gap-2">
         <div
-          className="text-[8px] sm:text-[9px] tracking-[1.5px] sm:tracking-[2px] uppercase font-mono px-1.5 sm:px-2 py-1 rounded whitespace-nowrap"
+          className="text-[12px] sm:text-[13px] tracking-[1.5px] sm:tracking-[2px] uppercase font-mono px-1.5 sm:px-2 py-1 rounded whitespace-nowrap"
           style={{
             color: phaseColor,
             border: `1px solid ${phaseColor}44`,
@@ -94,7 +94,7 @@ export default function EpochStatus() {
 
         {countdownTarget > 0 && (
           <div className="text-right">
-            <div className="text-[8px] sm:text-[9px] text-gray-600 uppercase tracking-wider sm:tracking-widest">
+            <div className="text-[12px] sm:text-[13px] text-gray-300 uppercase tracking-wider sm:tracking-widest font-bold">
               {epoch.phase === "Gathering" ? "Ritual begins in" : "Ritual ends in"}
             </div>
             <div className="font-mono text-xs sm:text-sm" style={{ color: phaseColor }}>
@@ -105,7 +105,7 @@ export default function EpochStatus() {
 
         {epoch.phase === "Resolved" && (
           <div
-            className="text-[10px] sm:text-[11px] font-mono tracking-widest"
+            className="text-[14px] sm:text-[15px] font-mono tracking-widest"
             style={{ color: phaseColor }}
           >
             {epoch.successful ? "✦ SUMMONED" : "✕ FAILED"}
@@ -117,14 +117,14 @@ export default function EpochStatus() {
       <ProgressBar progress={epoch.progress} />
 
       {/* Burned / needed */}
-      <div className="flex justify-between text-[9px] sm:text-[10px] font-mono text-gray-600">
+      <div className="flex justify-between text-[13px] sm:text-[14px] font-mono text-gray-300">
         <span>{formatRitual(epoch.totalCommitted)} $RITUAL burned</span>
         <span>{formatRitual(epoch.threshold)} needed</span>
       </div>
 
       {/* Stage + participants */}
-      <div className="flex justify-between text-[9px] sm:text-[10px] font-mono text-gray-600">
-        <span className="italic" style={{ color: phaseColor + "99" }}>
+      <div className="flex justify-between text-[13px] sm:text-[14px] font-mono text-gray-300">
+        <span className="italic" style={{ color: phaseColor }}>
           {epoch.stage.name}
         </span>
         <span>

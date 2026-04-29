@@ -22,23 +22,23 @@ export default function CultRankBar() {
     <div className="card-raised p-2.5 sm:p-3 mt-3 sm:mt-4">
       <div className="flex justify-between items-center gap-2">
         <div className="min-w-0">
-          <span className="text-[9px] sm:text-[10px] text-gray-500 tracking-[1.5px] sm:tracking-[2px]">
+          <span className="text-[13px] sm:text-[14px] text-gray-300 tracking-[1.5px] sm:tracking-[2px] font-bold">
             CULT RANK:{" "}
           </span>
           <span
-            className="text-[12px] sm:text-[13px] font-bold"
+            className="text-[15px] sm:text-[16px] font-bold"
             style={{ color: currentRank.color }}
           >
             {currentRank.name}
           </span>
         </div>
         {!isMaxRank && nextRank ? (
-          <div className="text-[9px] sm:text-[10px] text-gray-600 whitespace-nowrap">
+          <div className="text-[13px] sm:text-[14px] text-gray-300 whitespace-nowrap">
             {glyphsToNext} to{" "}
             <span style={{ color: nextRank.color }}>{nextRank.name}</span>
           </div>
         ) : (
-          <div className="text-[9px] sm:text-[10px] text-tier-breach">MAX RANK</div>
+          <div className="text-[13px] sm:text-[14px] text-tier-breach">MAX RANK</div>
         )}
       </div>
 

@@ -47,7 +47,7 @@ export function MintInterface() {
         <>
           {/* Balance */}
           <div className="flex items-center justify-between">
-            <span className="text-[11px] text-gray-500 tracking-[2px] uppercase font-mono">
+            <span className="text-[14px] text-gray-300 tracking-[2px] uppercase font-mono font-bold">
               Your balance
             </span>
             <span className="text-sm text-ritual-light font-mono">
@@ -57,7 +57,7 @@ export function MintInterface() {
 
           {/* ETH Amount Input */}
           <div className="space-y-2">
-            <label className="text-[11px] text-gray-500 tracking-[2px] uppercase font-mono">
+            <label className="text-[14px] text-gray-300 tracking-[2px] uppercase font-mono font-bold">
               ETH to spend
             </label>
             <div className="flex gap-2 items-center">

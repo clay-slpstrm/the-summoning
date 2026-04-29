@@ -27,6 +27,21 @@ const config: Config = {
           rupture: "#F59E0B",
           breach: "#EF4444",
         },
+        // Shift Tailwind's gray palette brighter so secondary text reads cleanly
+        // on #0a0a0f. Effectively two tiers: "label" (~14:1) and "muted" (~11:1).
+        gray: {
+          50: "#f9fafb",
+          100: "#f3f4f6",
+          200: "#e5e7eb",
+          300: "#e2e8f0",
+          400: "#e2e8f0",
+          500: "#e2e8f0",
+          600: "#e2e8f0",
+          700: "#cbd5e1",
+          800: "#9ca3af",
+          900: "#6b7280",
+          950: "#4b5563",
+        },
       },
       fontFamily: {
         serif: ["Crimson Text", "Georgia", "serif"],

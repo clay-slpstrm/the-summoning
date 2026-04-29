@@ -27,12 +27,12 @@ export function Header() {
           </h1>
           <Link
             href="/about"
-            className="text-[9px] sm:text-[10px] tracking-[2px] uppercase font-mono text-gray-600 hover:text-ritual-light transition-colors hidden sm:block"
+            className="text-[13px] sm:text-[14px] tracking-[2px] uppercase font-mono text-gray-300 hover:text-ritual-light transition-colors hidden sm:block font-bold"
           >
             About
           </Link>
         </div>
-        <p className="text-[10px] sm:text-[11px] text-gray-600 tracking-[2px] sm:tracking-[3px] font-mono mt-0.5">
+        <p className="text-[14px] sm:text-[15px] text-gray-300 tracking-[2px] sm:tracking-[3px] font-mono mt-0.5">
           {subtitle}
         </p>
       </div>
@@ -40,13 +40,13 @@ export function Header() {
       <div className="flex items-center gap-2 sm:gap-3">
         <Link
           href="/about"
-          className="text-[9px] tracking-[2px] uppercase font-mono text-gray-600 hover:text-ritual-light transition-colors sm:hidden"
+          className="text-[13px] tracking-[2px] uppercase font-mono text-gray-300 hover:text-ritual-light transition-colors sm:hidden"
         >
           About
         </Link>
         {isConnected && (
           <div className="stat-box text-right">
-            <div className="text-[9px] sm:text-[10px] text-gray-600 tracking-[2px] uppercase font-mono">$RITUAL</div>
+            <div className="text-[13px] sm:text-[14px] text-gray-300 tracking-[2px] uppercase font-mono font-bold">$RITUAL</div>
             <div className="text-xs sm:text-sm text-ritual-light font-mono">{display}</div>
           </div>
         )}

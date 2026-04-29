@@ -47,3 +47,6 @@ backend/src/generated/
 frontend/.next/
 subgraph/generated/
 subgraph/build/
+
+# TypeScript incremental cache
+*.tsbuildinfo
