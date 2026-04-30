@@ -90,7 +90,7 @@ export default function SacrificePanel({ epoch }: { epoch: EpochData }) {
   })();
 
   const needsApproval = allowance !== undefined && amountWei > 0n && (allowance as bigint) < amountWei;
-  const isValidAmount = amountWei >= parseEther("100"); // MIN_SACRIFICE
+  const isValidAmount = amountWei >= parseEther("1"); // MIN_SACRIFICE
   const isBusy = isSacrificing || isSacrificeConfirming || isApproving || isApproveConfirming;
 
   const handleSacrifice = () => {
@@ -148,7 +148,7 @@ export default function SacrificePanel({ epoch }: { epoch: EpochData }) {
       {/* Minimum warning */}
       {amount && !isValidAmount && amountWei > 0n && (
         <div className="text-[14px] text-red-400 mt-2">
-          Minimum sacrifice: 100 $RITUAL
+          Minimum sacrifice: 1 $RITUAL
         </div>
       )}
 

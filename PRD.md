@@ -416,13 +416,32 @@ Player wants another pull → Repeat
 
 ### 5.1 Glyph Rarity Distribution
 
-| Tier | Drop Rate | Color | Glow Hex | Visual Weight |
-|------|-----------|-------|----------|---------------|
-| Whisper | 50% | #8B8B8B (Gray) | #8B8B8B44 | Subtle, brief |
-| Echo | 28% | #4A9EFF (Blue) | #4A9EFF44 | Moderate |
-| Tremor | 15% | #A855F7 (Purple) | #A855F766 | "RARE" label, shimmer |
-| Rupture | 6% | #F59E0B (Gold) | #F59E0B66 | "LEGENDARY" badge, flash |
-| Breach | 1% | #EF4444 (Red) | #EF444488 | Screen shake, extended |
+Tier visual identity:
+
+| Tier | Color | Glow Hex | Visual Weight |
+|------|-------|----------|---------------|
+| Whisper | #8B8B8B (Gray) | #8B8B8B44 | Subtle, brief |
+| Echo | #4A9EFF (Blue) | #4A9EFF44 | Moderate |
+| Tremor | #A855F7 (Purple) | #A855F766 | "RARE" label, shimmer |
+| Rupture | #F59E0B (Gold) | #F59E0B66 | "LEGENDARY" badge, flash |
+| Breach | #EF4444 (Red) | #EF444488 | Screen shake, extended |
+
+Drop rates scale with sacrifice amount via 5 brackets. Each row sums to 100%. Provably-fair RNG uses Chainlink VRF; the bracket is selected by `_bracket(amount)` in `EldritchGlyphs._deriveTier(bits, amount)`.
+
+| Bracket | Sacrifice Range | Whisper | Echo | Tremor | Rupture | Breach |
+|---------|-----------------|---------|------|--------|---------|--------|
+| 0 | 1 – 9 RITUAL | 50% | 28% | 15% | 6% | 1% |
+| 1 | 10 – 99 RITUAL | 42% | 30% | 18% | 8% | 2% |
+| 2 | 100 – 999 RITUAL | 30% | 30% | 24% | 12% | 4% |
+| 3 | 1,000 – 9,999 RITUAL | 20% | 27% | 28% | 17% | 8% |
+| 4 | ≥ 10,000 RITUAL | 12% | 22% | 30% | 22% | 14% |
+
+Design principles:
+- **Floor preserved**: 1 RITUAL is the entry point — no participants are gated out of the rare-pull dream.
+- **Whales pay for probability density, not exclusivity**: Bracket 4 still has 12% Whisper, so even max-bracket sacrifices produce common dust occasionally.
+- **Modal experience shifts**: small sacrifices are most likely Whisper; bracket 3+ sacrifices most-often roll Tremor (the "rare").
+- **Breach scales 1% → 14%** across brackets, ~doubling each step — the mythic remains rare but reachable for engaged players.
+- **Cost-per-rare is non-monotonic**: small players are economically efficient rare-hunters per RITUAL spent; whales pay for guaranteed glyph volume with elevated expected rarity per pull.
 
 ### 5.2 Rune Symbol Pool
 

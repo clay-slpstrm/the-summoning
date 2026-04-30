@@ -351,8 +351,9 @@ contract SummoningEngine is Ownable, ReentrancyGuard, AutomationCompatibleInterf
         // ... burns tokens, records contribution ...
         emit RitualSacrifice(id, msg.sender, amount, epoch.totalCommitted);
 
-        // Non-blocking VRF request — sacrifice succeeds even if VRF is down
-        try glyphs.requestGlyph(msg.sender, id) {} catch (bytes memory reason) {
+        // Non-blocking VRF request — sacrifice succeeds even if VRF is down.
+        // Amount is passed so the glyph contract can select the tier-weight bracket.
+        try glyphs.requestGlyph(msg.sender, id, amount) {} catch (bytes memory reason) {
             emit GlyphRequestFailed(id, msg.sender, reason);
         }
     }
@@ -571,24 +572,29 @@ On-chain tradeable glyph NFTs. Each sacrifice mints a unique ERC-1155 glyph via 
 **Key design decisions**:
 - **Tradeable, not soulbound** — enables secondary market and late-joiner participation
 - **EIP-2981 royalties** — 5% on secondary sales to treasury
-- **VRF for fairness** — provably random tier assignment (same cumulative thresholds: 5000/7800/9300/9900/10000)
+- **VRF for fairness** — provably random tier assignment with sacrifice-amount-weighted brackets (see PRD §5.1 for the table)
+- **Tier weight bracketing** — `_bracket(amount)` selects one of 5 weight rows (1/10/100/1000/10000 RITUAL boundaries); larger sacrifices weight toward rarer tiers without locking small players out of any tier
+- **Amount stored with the request** — VRF callback is async, so `pendingGlyphs[requestId].amount` is captured at request time and read back in `fulfillRandomWords` to pick the bracket
 - **Double-fulfill guard** — `fulfillRandomWords` checks `pending.fulfilled` flag before minting, preventing duplicate glyphs from VRF coordinator bugs
 - **glyphCount tracking** — `_update()` override tracks per-wallet count on mint/transfer/burn, so cult rank reflects current ownership
 - **Separate from SummoningEngine** — clean separation of concerns; engine calls `requestGlyph()`, VRF callback mints
 
 ```solidity
 contract EldritchGlyphs is ERC1155, VRFConsumerBaseV2Plus, ERC2981 {
-    function requestGlyph(address recipient, uint256 epochId) external onlyEngine returns (uint256 requestId);
+    function requestGlyph(address recipient, uint256 epochId, uint256 amount) external onlyEngine returns (uint256 requestId);
     function fulfillRandomWords(uint256 requestId, uint256[] calldata randomWords) internal override {
-        // Checks pending.fulfilled flag to prevent double-mint
+        // Reads pending.amount → _bracket(amount) → _tierWeights → cumulative roll
     }
+    function _bracket(uint256 amount) internal pure returns (uint8);
+    function _tierWeights(uint8 bracket) internal pure returns (uint16[5] memory);
+    function _deriveTier(uint64 bits, uint256 amount) internal pure returns (uint8);
     function getGlyphData(uint256 tokenId) external view returns (GlyphData memory);
     function glyphCount(address wallet) external view returns (uint256);
     function totalMinted() external view returns (uint256);
 }
 ```
 
-**33 tests** covering: VRF fulfillment, double-fulfill revert, tier derivation boundaries, fuzz distribution (10,000 samples ±2%), royalty info, glyphCount tracking on transfers, supportsInterface (ERC1155 + ERC2981).
+**37 tests** covering: VRF fulfillment, double-fulfill revert, tier derivation boundaries, per-bracket fuzz distributions (1,000 samples × 5 brackets, ±5% tolerance), royalty info, glyphCount tracking on transfers, supportsInterface (ERC1155 + ERC2981).
 
 ### 3.6 Contract Deployment Order
 
@@ -1528,7 +1534,7 @@ export const CONTRACT_PARAMS = {
   PROTOCOL_FEE_BPS: 1200,       // 12%
   GATHERING_DURATION: 48 * 3600, // 48 hours in seconds
   RITUAL_DURATION: 24 * 3600,    // 24 hours in seconds
-  MIN_SACRIFICE: 100,            // $RITUAL tokens
+  MIN_SACRIFICE: 1,              // $RITUAL tokens — tier odds scale with amount, not gated by floor
   SACRIFICE_COOLDOWN: 30,        // seconds
 };
 ```

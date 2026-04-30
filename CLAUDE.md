@@ -152,7 +152,7 @@ CONTRACT_PARAMS:
   PROTOCOL_FEE        — 12% (1200 BPS)
   GATHERING_DURATION  — 48 hours
   RITUAL_DURATION     — 24 hours
-  MIN_SACRIFICE       — 100 $RITUAL
+  MIN_SACRIFICE       — 1 $RITUAL (tier weights scale with amount via brackets — see PRD §5.1)
   SACRIFICE_COOLDOWN  — 30 seconds
 
 ERC-1155 TOKEN IDS:

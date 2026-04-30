@@ -14,24 +14,22 @@ import { IEldritchGlyphs } from "./interfaces/IEldritchGlyphs.sol";
 /// @notice Each sacrifice in SummoningEngine mints one glyph NFT via VRF.
 ///         Tiers are provably fair. 5% royalty on secondary sales (EIP-2981).
 ///
-///         Tier distribution (cumulative out of 10,000):
-///           Whisper  50%  → [0, 5000)
-///           Echo     28%  → [5000, 7800)
-///           Tremor   15%  → [7800, 9300)
-///           Rupture   6%  → [9300, 9900)
-///           Breach    1%  → [9900, 10000)
+///         Tier distribution scales with sacrifice amount via 5 brackets
+///         (basis points out of 10,000 — each row sums to 10,000):
+///
+///           Bracket 0  (1–9 RITUAL):       50% / 28% / 15% /  6% /  1%
+///           Bracket 1  (10–99):            42% / 30% / 18% /  8% /  2%
+///           Bracket 2  (100–999):          30% / 30% / 24% / 12% /  4%
+///           Bracket 3  (1,000–9,999):      20% / 27% / 28% / 17% /  8%
+///           Bracket 4  (≥ 10,000):         12% / 22% / 30% / 22% / 14%
 contract EldritchGlyphs is ERC1155, VRFConsumerBaseV2Plus, ERC2981, IEldritchGlyphs {
     using Strings for uint256;
 
     // ── Constants ──
 
-    uint16 internal constant TIER_WHISPER = 5000;
-    uint16 internal constant TIER_ECHO = 7800;
-    uint16 internal constant TIER_TREMOR = 9300;
-    uint16 internal constant TIER_RUPTURE = 9900;
-    uint16 internal constant TIER_BREACH = 10_000;
     uint8 internal constant NUM_RUNES = 30;
     uint8 internal constant NUM_LORE = 10;
+    uint16 internal constant BPS_TOTAL = 10_000;
 
     // ── VRF Config (immutable) ──
 
@@ -53,6 +51,7 @@ contract EldritchGlyphs is ERC1155, VRFConsumerBaseV2Plus, ERC2981, IEldritchGly
     struct PendingGlyph {
         address recipient;
         uint256 epochId;
+        uint256 amount; // sacrifice amount — determines tier bracket on fulfillment
         bool fulfilled;
     }
 
@@ -122,8 +121,9 @@ contract EldritchGlyphs is ERC1155, VRFConsumerBaseV2Plus, ERC2981, IEldritchGly
     /// @notice Request a glyph mint. Called by SummoningEngine after each sacrifice.
     /// @param recipient The wallet that will receive the glyph NFT.
     /// @param epochId The current epoch ID.
+    /// @param amount Sacrifice amount in wei — selects the tier weight bracket on fulfillment.
     /// @return requestId The Chainlink VRF request ID.
-    function requestGlyph(address recipient, uint256 epochId)
+    function requestGlyph(address recipient, uint256 epochId, uint256 amount)
         external
         onlyEngine
         returns (uint256 requestId)
@@ -144,6 +144,7 @@ contract EldritchGlyphs is ERC1155, VRFConsumerBaseV2Plus, ERC2981, IEldritchGly
         pendingGlyphs[requestId] = PendingGlyph({
             recipient: recipient,
             epochId: epochId,
+            amount: amount,
             fulfilled: false
         });
 
@@ -161,8 +162,8 @@ contract EldritchGlyphs is ERC1155, VRFConsumerBaseV2Plus, ERC2981, IEldritchGly
         pending.fulfilled = true;
         uint256 seed = randomWords[0];
 
-        // Derive tier from bits 0-63
-        uint8 tier = _deriveTier(uint64(seed));
+        // Derive tier from bits 0-63 — bracket selected by sacrifice amount
+        uint8 tier = _deriveTier(uint64(seed), pending.amount);
         // Derive rune from bits 64-127
         uint8 runeIndex = uint8((seed >> 64) % NUM_RUNES);
         // Derive lore from bits 128-191
@@ -185,14 +186,42 @@ contract EldritchGlyphs is ERC1155, VRFConsumerBaseV2Plus, ERC2981, IEldritchGly
 
     // ── Tier Derivation ──
 
-    /// @dev Same cumulative probability as backend: 50/28/15/6/1
-    function _deriveTier(uint64 bits) internal pure returns (uint8) {
-        uint16 roll = uint16(bits % 10_000);
-        if (roll < TIER_WHISPER) return 0; // Whisper 50%
-        if (roll < TIER_ECHO) return 1; // Echo    28%
-        if (roll < TIER_TREMOR) return 2; // Tremor  15%
-        if (roll < TIER_RUPTURE) return 3; // Rupture  6%
-        return 4; // Breach   1%
+    /// @dev Bucket sacrifice amount into a 5-row tier-weight table.
+    ///      Boundaries are 10, 100, 1000, 10000 RITUAL (each 18 decimals).
+    function _bracket(uint256 amount) internal pure returns (uint8) {
+        if (amount < 10e18) return 0;
+        if (amount < 100e18) return 1;
+        if (amount < 1000e18) return 2;
+        if (amount < 10_000e18) return 3;
+        return 4;
+    }
+
+    /// @dev Tier weights per bracket (basis points). Each row sums to 10,000.
+    ///      Returned by index for gas efficiency vs. a 2D constant array.
+    function _tierWeights(uint8 bracket) internal pure returns (uint16[5] memory w) {
+        if (bracket == 0) {
+            return [uint16(5000), 2800, 1500, 600, 100];
+        } else if (bracket == 1) {
+            return [uint16(4200), 3000, 1800, 800, 200];
+        } else if (bracket == 2) {
+            return [uint16(3000), 3000, 2400, 1200, 400];
+        } else if (bracket == 3) {
+            return [uint16(2000), 2700, 2800, 1700, 800];
+        } else {
+            return [uint16(1200), 2200, 3000, 2200, 1400];
+        }
+    }
+
+    /// @dev Pick a tier 0-4 from random bits, weighted by sacrifice amount's bracket.
+    function _deriveTier(uint64 bits, uint256 amount) internal pure returns (uint8) {
+        uint16[5] memory w = _tierWeights(_bracket(amount));
+        uint16 roll = uint16(bits % BPS_TOTAL);
+        uint16 cumulative;
+        for (uint8 i = 0; i < 5; i++) {
+            cumulative += w[i];
+            if (roll < cumulative) return i;
+        }
+        return 4; // unreachable: weights sum to BPS_TOTAL
     }
 
     // ── Glyph Count Tracking ──

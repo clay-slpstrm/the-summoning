@@ -54,7 +54,7 @@ contract SummoningEngine is Ownable, ReentrancyGuard, AutomationCompatibleInterf
 
     uint256 public constant GATHERING_DURATION    = 48 hours;
     uint256 public constant RITUAL_DURATION       = 24 hours;
-    uint256 public constant MIN_SACRIFICE         = 100e18;   // 100 $RITUAL minimum
+    uint256 public constant MIN_SACRIFICE         = 1e18;     // 1 $RITUAL minimum — low entry barrier; tier weight scales with amount via bracketing in EldritchGlyphs
     uint256 public constant SACRIFICE_COOLDOWN    = 30;       // seconds between sacrifices per wallet
     uint256 public constant FAILURE_REDUCTION_BPS = 2000;    // 20% threshold reduction on failure
     uint256 public constant ESCALATION_BPS        = 13000;   // 1.3× threshold increase on success
@@ -172,8 +172,9 @@ contract SummoningEngine is Ownable, ReentrancyGuard, AutomationCompatibleInterf
 
         emit RitualSacrifice(id, msg.sender, amount, epoch.totalCommitted);
 
-        // Request glyph mint via Chainlink VRF — non-blocking so VRF outage doesn't halt sacrifices
-        try glyphs.requestGlyph(msg.sender, id) {} catch (bytes memory reason) {
+        // Request glyph mint via Chainlink VRF — non-blocking so VRF outage doesn't halt sacrifices.
+        // The amount is passed so the glyph contract can select the tier-weight bracket.
+        try glyphs.requestGlyph(msg.sender, id, amount) {} catch (bytes memory reason) {
             emit GlyphRequestFailed(id, msg.sender, reason);
         }
     }

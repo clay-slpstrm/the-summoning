@@ -11,7 +11,7 @@ import "../src/interfaces/IEldritchGlyphs.sol";
 contract MockGlyphs is IEldritchGlyphs {
     uint256 public nextRequestId = 1;
 
-    function requestGlyph(address, uint256) external returns (uint256 requestId) {
+    function requestGlyph(address, uint256, uint256) external returns (uint256 requestId) {
         requestId = nextRequestId++;
     }
 
@@ -41,7 +41,7 @@ contract SummoningEngineTest is Test {
 
     uint256 constant OLD_ONE_ID = 1;
     uint256 constant THRESHOLD  = 10_000e18; // 10,000 $RITUAL
-    uint256 constant MIN        = 100e18;
+    uint256 constant MIN        = 1e18;
 
     function setUp() public {
         vm.startPrank(owner);
@@ -599,7 +599,7 @@ contract SummoningEngineTest is Test {
     function test_Constants() public view {
         assertEq(engine.GATHERING_DURATION(), 48 hours);
         assertEq(engine.RITUAL_DURATION(), 24 hours);
-        assertEq(engine.MIN_SACRIFICE(), 100e18);
+        assertEq(engine.MIN_SACRIFICE(), 1e18);
         assertEq(engine.SACRIFICE_COOLDOWN(), 30);
         assertEq(engine.FAILURE_REDUCTION_BPS(), 2000);
         assertEq(engine.ESCALATION_BPS(), 13000);

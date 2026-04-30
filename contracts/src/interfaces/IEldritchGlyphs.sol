@@ -37,7 +37,8 @@ interface IEldritchGlyphs {
     // ── Functions ──
 
     /// @notice Request a glyph mint via Chainlink VRF. Called by SummoningEngine after sacrifice.
-    function requestGlyph(address recipient, uint256 epochId) external returns (uint256 requestId);
+    /// @param amount Sacrifice amount in wei — determines the tier weight bracket.
+    function requestGlyph(address recipient, uint256 epochId, uint256 amount) external returns (uint256 requestId);
 
     /// @notice Get on-chain glyph metadata for a token.
     function getGlyphData(uint256 tokenId) external view returns (GlyphData memory);

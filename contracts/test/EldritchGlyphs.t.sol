@@ -52,12 +52,13 @@ contract EldritchGlyphsTest is Test {
     // ── Helpers ──────────────────────────────────────────────────────────────
 
     /// Request a glyph from the engine and fulfill VRF with specific random words.
-    function _requestAndFulfill(address recipient, uint256 epochId, uint256 randomWord)
+    /// @param amount Sacrifice amount — selects the tier-weight bracket (1e18 = bracket 0).
+    function _requestAndFulfill(address recipient, uint256 epochId, uint256 amount, uint256 randomWord)
         internal
         returns (uint256 tokenId)
     {
         vm.prank(engine);
-        uint256 requestId = glyphs.requestGlyph(recipient, epochId);
+        uint256 requestId = glyphs.requestGlyph(recipient, epochId, amount);
 
         uint256[] memory words = new uint256[](1);
         words[0] = randomWord;
@@ -66,13 +67,21 @@ contract EldritchGlyphsTest is Test {
         tokenId = glyphs.nextTokenId() - 1;
     }
 
-    /// Request and fulfill with auto-generated random words.
+    /// Backward-compat overload: bracket-0 sacrifice (1 RITUAL).
+    function _requestAndFulfill(address recipient, uint256 epochId, uint256 randomWord)
+        internal
+        returns (uint256 tokenId)
+    {
+        return _requestAndFulfill(recipient, epochId, 1e18, randomWord);
+    }
+
+    /// Request and fulfill with auto-generated random words at bracket 0.
     function _requestAndFulfillAuto(address recipient, uint256 epochId)
         internal
         returns (uint256 requestId)
     {
         vm.prank(engine);
-        requestId = glyphs.requestGlyph(recipient, epochId);
+        requestId = glyphs.requestGlyph(recipient, epochId, 1e18);
         vrfCoordinator.fulfillRandomWords(requestId, address(glyphs));
     }
 
@@ -134,16 +143,17 @@ contract EldritchGlyphsTest is Test {
     function test_RequestGlyph_OnlyEngine() public {
         vm.prank(alice);
         vm.expectRevert(IEldritchGlyphs.EldritchGlyphs__OnlyEngine.selector);
-        glyphs.requestGlyph(alice, 1);
+        glyphs.requestGlyph(alice, 1, 1e18);
     }
 
     function test_RequestGlyph_StoresPending() public {
         vm.prank(engine);
-        uint256 requestId = glyphs.requestGlyph(alice, 1);
+        uint256 requestId = glyphs.requestGlyph(alice, 1, 1e18);
 
-        (address recipient, uint256 epochId, bool fulfilled) = glyphs.pendingGlyphs(requestId);
+        (address recipient, uint256 epochId, uint256 amount, bool fulfilled) = glyphs.pendingGlyphs(requestId);
         assertEq(recipient, alice);
         assertEq(epochId, 1);
+        assertEq(amount, 1e18);
         assertFalse(fulfilled);
     }
 
@@ -151,7 +161,7 @@ contract EldritchGlyphsTest is Test {
         vm.prank(engine);
         vm.expectEmit(true, true, false, true);
         emit IEldritchGlyphs.GlyphRequested(1, alice, 1);
-        glyphs.requestGlyph(alice, 1);
+        glyphs.requestGlyph(alice, 1, 1e18);
     }
 
     // ── Fulfill (VRF Callback) ───────────────────────────────────────────────
@@ -186,16 +196,16 @@ contract EldritchGlyphsTest is Test {
 
     function test_Fulfill_MarksFulfilled() public {
         vm.prank(engine);
-        uint256 requestId = glyphs.requestGlyph(alice, 1);
+        uint256 requestId = glyphs.requestGlyph(alice, 1, 1e18);
         vrfCoordinator.fulfillRandomWords(requestId, address(glyphs));
 
-        (, , bool fulfilled) = glyphs.pendingGlyphs(requestId);
+        (, , , bool fulfilled) = glyphs.pendingGlyphs(requestId);
         assertTrue(fulfilled);
     }
 
     function test_Fulfill_RevertsOnDoubleFulfill() public {
         vm.prank(engine);
-        uint256 requestId = glyphs.requestGlyph(alice, 1);
+        uint256 requestId = glyphs.requestGlyph(alice, 1, 1e18);
         vrfCoordinator.fulfillRandomWords(requestId, address(glyphs));
 
         // Second fulfillment should revert (fulfilled flag is checked)
@@ -205,7 +215,7 @@ contract EldritchGlyphsTest is Test {
 
     function test_Fulfill_EmitsGlyphMinted() public {
         vm.prank(engine);
-        uint256 requestId = glyphs.requestGlyph(alice, 1);
+        uint256 requestId = glyphs.requestGlyph(alice, 1, 1e18);
 
         // Use specific word so we can predict the event args
         uint256[] memory words = new uint256[](1);
@@ -296,26 +306,55 @@ contract EldritchGlyphsTest is Test {
         assertEq(glyphs.getGlyphData(tokenId).tier, 4);
     }
 
-    // ── Fuzz: Tier Distribution ──────────────────────────────────────────────
+    // ── Fuzz: Tier Distribution per bracket ──────────────────────────────────
 
-    function test_FuzzTierDistribution() public {
-        // 1,000 samples — still statistically valid, feasible on-chain.
-        // Expected: 500/280/150/60/10 (±5% = ±50)
+    /// Helper: run N samples at a given amount, assert tier distribution within tolerance.
+    function _assertBracketDistribution(
+        uint256 amount,
+        uint256[5] memory expected,
+        uint256 tolerance,
+        string memory bracketLabel
+    ) internal {
         uint256 total = 1_000;
         uint256[5] memory counts;
 
         for (uint256 i = 0; i < total; i++) {
-            uint256 seed = uint256(keccak256(abi.encode("fuzz", i)));
-            uint256 tokenId = _requestAndFulfill(alice, 1, seed);
+            uint256 seed = uint256(keccak256(abi.encode(bracketLabel, i)));
+            uint256 tokenId = _requestAndFulfill(alice, 1, amount, seed);
             uint8 tier = glyphs.getGlyphData(tokenId).tier;
             counts[tier]++;
         }
 
-        assertApproxEqAbs(counts[0], 500, 50, "Whisper distribution off");
-        assertApproxEqAbs(counts[1], 280, 50, "Echo distribution off");
-        assertApproxEqAbs(counts[2], 150, 50, "Tremor distribution off");
-        assertApproxEqAbs(counts[3], 60, 50, "Rupture distribution off");
-        assertApproxEqAbs(counts[4], 10, 50, "Breach distribution off");
+        assertApproxEqAbs(counts[0], expected[0], tolerance, string.concat(bracketLabel, " Whisper off"));
+        assertApproxEqAbs(counts[1], expected[1], tolerance, string.concat(bracketLabel, " Echo off"));
+        assertApproxEqAbs(counts[2], expected[2], tolerance, string.concat(bracketLabel, " Tremor off"));
+        assertApproxEqAbs(counts[3], expected[3], tolerance, string.concat(bracketLabel, " Rupture off"));
+        assertApproxEqAbs(counts[4], expected[4], tolerance, string.concat(bracketLabel, " Breach off"));
+    }
+
+    function test_FuzzTierDistribution_Bracket0() public {
+        // 1 RITUAL → bracket 0: 50/28/15/6/1
+        _assertBracketDistribution(1e18, [uint256(500), 280, 150, 60, 10], 50, "B0");
+    }
+
+    function test_FuzzTierDistribution_Bracket1() public {
+        // 10 RITUAL → bracket 1: 42/30/18/8/2
+        _assertBracketDistribution(10e18, [uint256(420), 300, 180, 80, 20], 50, "B1");
+    }
+
+    function test_FuzzTierDistribution_Bracket2() public {
+        // 100 RITUAL → bracket 2: 30/30/24/12/4
+        _assertBracketDistribution(100e18, [uint256(300), 300, 240, 120, 40], 50, "B2");
+    }
+
+    function test_FuzzTierDistribution_Bracket3() public {
+        // 1,000 RITUAL → bracket 3: 20/27/28/17/8
+        _assertBracketDistribution(1_000e18, [uint256(200), 270, 280, 170, 80], 50, "B3");
+    }
+
+    function test_FuzzTierDistribution_Bracket4() public {
+        // 10,000 RITUAL → bracket 4: 12/22/30/22/14
+        _assertBracketDistribution(10_000e18, [uint256(120), 220, 300, 220, 140], 50, "B4");
     }
 
     // ── Royalties (EIP-2981) ─────────────────────────────────────────────────
@@ -372,10 +411,10 @@ contract EldritchGlyphsTest is Test {
     function test_FullLifecycle() public {
         // 1. Engine requests glyph for alice
         vm.prank(engine);
-        uint256 requestId = glyphs.requestGlyph(alice, 1);
+        uint256 requestId = glyphs.requestGlyph(alice, 1, 1e18);
 
         // 2. Pending state exists
-        (address recipient, , bool fulfilled) = glyphs.pendingGlyphs(requestId);
+        (address recipient, , , bool fulfilled) = glyphs.pendingGlyphs(requestId);
         assertEq(recipient, alice);
         assertFalse(fulfilled);
         assertEq(glyphs.glyphCount(alice), 0);
@@ -386,7 +425,7 @@ contract EldritchGlyphsTest is Test {
         // 4. Glyph is minted
         assertEq(glyphs.balanceOf(alice, 1), 1);
         assertEq(glyphs.glyphCount(alice), 1);
-        (, , fulfilled) = glyphs.pendingGlyphs(requestId);
+        (, , , fulfilled) = glyphs.pendingGlyphs(requestId);
         assertTrue(fulfilled);
 
         // 5. Glyph data is stored
