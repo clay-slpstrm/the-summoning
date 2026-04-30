@@ -6,6 +6,7 @@ import { config, validateConfig } from "./config.js";
 import { wsManager } from "./services/wsManager.js";
 import { startEventListener, startGlyphEventListener } from "./services/eventListener.js";
 import { startEpochSync } from "./services/epochSync.js";
+import { backfillGlyphEvents } from "./services/backfill.js";
 import { setupRoutes } from "./api/routes.js";
 
 validateConfig();
@@ -42,7 +43,10 @@ server.listen(config.PORT, () => {
   }
 
   if (config.ELDRITCH_GLYPHS_ADDRESS) {
-    startGlyphEventListener();
+    // Backfill any GlyphMinted events missed during downtime, then start the live watcher.
+    backfillGlyphEvents(5000)
+      .catch((err) => console.error("[BACKFILL] Failed:", err))
+      .finally(() => startGlyphEventListener());
   } else {
     console.warn("[EVENTS] No ELDRITCH_GLYPHS_ADDRESS configured, glyph listener disabled");
   }
