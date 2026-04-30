@@ -19,11 +19,20 @@ const PHASE_LABEL: Record<string, string> = {
   Inactive: "INACTIVE",
 };
 
+// Visual accents (badge border/bg, progress gradients) — saturated tier colors.
 const PHASE_COLOR: Record<string, string> = {
   Gathering: "#4A9EFF",
   Ritual: "#A855F7",
   Resolved: "#F59E0B",
   Inactive: "#6B7280",
+};
+
+// Text variant — brighter on dark bg so countdown / stage labels stay legible.
+const PHASE_TEXT_COLOR: Record<string, string> = {
+  Gathering: "#93C5FD",
+  Ritual: "#D8B4FE",
+  Resolved: "#FCD34D",
+  Inactive: "#CBD5E1",
 };
 
 export default function EpochStatus() {
@@ -62,6 +71,11 @@ export default function EpochStatus() {
       ? epoch.successful ? "#F59E0B" : "#6B7280"
       : PHASE_COLOR[epoch.phase] ?? "#6B7280";
 
+  const phaseTextColor =
+    epoch.phase === "Resolved"
+      ? epoch.successful ? "#FCD34D" : "#CBD5E1"
+      : PHASE_TEXT_COLOR[epoch.phase] ?? "#CBD5E1";
+
   const countdownTarget =
     epoch.phase === "Gathering" ? epoch.ritualStart :
     epoch.phase === "Ritual" ? epoch.ritualEnd : 0;
@@ -82,10 +96,10 @@ export default function EpochStatus() {
       {/* Phase badge + countdown */}
       <div className="flex items-center justify-between gap-2">
         <div
-          className="text-[12px] sm:text-[13px] tracking-[1.5px] sm:tracking-[2px] uppercase font-mono px-1.5 sm:px-2 py-1 rounded whitespace-nowrap"
+          className="text-[12px] sm:text-[13px] tracking-[1.5px] sm:tracking-[2px] uppercase font-mono font-bold px-1.5 sm:px-2 py-1 rounded whitespace-nowrap"
           style={{
-            color: phaseColor,
-            border: `1px solid ${phaseColor}44`,
+            color: phaseTextColor,
+            border: `1px solid ${phaseColor}66`,
             background: `${phaseColor}11`,
           }}
         >
@@ -97,7 +111,7 @@ export default function EpochStatus() {
             <div className="text-[12px] sm:text-[13px] text-gray-300 uppercase tracking-wider sm:tracking-widest font-bold">
               {epoch.phase === "Gathering" ? "Ritual begins in" : "Ritual ends in"}
             </div>
-            <div className="font-mono text-xs sm:text-sm" style={{ color: phaseColor }}>
+            <div className="font-mono text-base sm:text-lg font-bold tabular-nums" style={{ color: phaseTextColor }}>
               <Countdown targetTimestamp={countdownTarget} />
             </div>
           </div>
@@ -105,8 +119,8 @@ export default function EpochStatus() {
 
         {epoch.phase === "Resolved" && (
           <div
-            className="text-[14px] sm:text-[15px] font-mono tracking-widest"
-            style={{ color: phaseColor }}
+            className="text-[14px] sm:text-[15px] font-mono tracking-widest font-bold"
+            style={{ color: phaseTextColor }}
           >
             {epoch.successful ? "✦ SUMMONED" : "✕ FAILED"}
           </div>
@@ -124,7 +138,7 @@ export default function EpochStatus() {
 
       {/* Stage + participants */}
       <div className="flex justify-between text-[13px] sm:text-[14px] font-mono text-gray-300">
-        <span className="italic" style={{ color: phaseColor }}>
+        <span className="italic font-bold" style={{ color: phaseTextColor }}>
           {epoch.stage.name}
         </span>
         <span>

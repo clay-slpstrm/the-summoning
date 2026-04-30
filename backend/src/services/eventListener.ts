@@ -46,6 +46,7 @@ export function startEventListener(): void {
   client.watchEvent({
     address,
     event: ritualSacrificeEvent,
+    pollingInterval: 4000,
     onLogs: async (logs) => {
       for (const log of logs) {
         try {
@@ -81,8 +82,9 @@ export function startEventListener(): void {
       }
     },
     onError: (error) => {
-      console.error("[EVENTS] SummoningEngine watch error:", error);
-      setTimeout(() => startEventListener(), 5000);
+      // viem auto-recreates the filter on the next poll; do NOT call
+      // startEventListener recursively (that spawns parallel watchers).
+      console.error("[EVENTS] SummoningEngine watch error:", error.message ?? error);
     },
   });
 }
@@ -103,6 +105,7 @@ export function startGlyphEventListener(): void {
   client.watchEvent({
     address,
     event: glyphRequestedEvent,
+    pollingInterval: 4000,
     onLogs: async (logs) => {
       for (const log of logs) {
         try {
@@ -128,8 +131,7 @@ export function startGlyphEventListener(): void {
       }
     },
     onError: (error) => {
-      console.error("[EVENTS] GlyphRequested watch error:", error);
-      setTimeout(() => startGlyphEventListener(), 5000);
+      console.error("[EVENTS] GlyphRequested watch error:", error.message ?? error);
     },
   });
 
@@ -137,6 +139,7 @@ export function startGlyphEventListener(): void {
   client.watchEvent({
     address,
     event: glyphMintedEvent,
+    pollingInterval: 4000,
     onLogs: async (logs) => {
       for (const log of logs) {
         try {
@@ -177,8 +180,7 @@ export function startGlyphEventListener(): void {
       }
     },
     onError: (error) => {
-      console.error("[EVENTS] GlyphMinted watch error:", error);
-      setTimeout(() => startGlyphEventListener(), 5000);
+      console.error("[EVENTS] GlyphMinted watch error:", error.message ?? error);
     },
   });
 }

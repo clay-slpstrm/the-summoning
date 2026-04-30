@@ -120,6 +120,7 @@ export function startEpochSync(intervalMs = 60_000): void {
     event: parseAbiItem(
       "event EpochStarted(uint256 indexed epochId, uint256 oldOneId, uint256 threshold, uint256 gatheringStart)"
     ),
+    pollingInterval: 4000,
     onLogs: async (logs) => {
       for (const log of logs) {
         const epochId = Number(log.args.epochId);
@@ -127,7 +128,7 @@ export function startEpochSync(intervalMs = 60_000): void {
         await syncEpoch(epochId);
       }
     },
-    onError: (err) => console.error("[EPOCH] EpochStarted watch error:", err),
+    onError: (err) => console.error("[EPOCH] EpochStarted watch error:", err.message ?? err),
   });
 
   // Watch EpochResolved
@@ -136,6 +137,7 @@ export function startEpochSync(intervalMs = 60_000): void {
     event: parseAbiItem(
       "event EpochResolved(uint256 indexed epochId, bool successful, uint256 totalBurned)"
     ),
+    pollingInterval: 4000,
     onLogs: async (logs) => {
       for (const log of logs) {
         const epochId = Number(log.args.epochId);
@@ -143,7 +145,7 @@ export function startEpochSync(intervalMs = 60_000): void {
         await syncEpoch(epochId);
       }
     },
-    onError: (err) => console.error("[EPOCH] EpochResolved watch error:", err),
+    onError: (err) => console.error("[EPOCH] EpochResolved watch error:", err.message ?? err),
   });
 
   // Poll as backstop (keeps totalCommitted fresh between RitualSacrifice events)
