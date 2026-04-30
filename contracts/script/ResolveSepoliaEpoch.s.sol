@@ -9,11 +9,13 @@ import "../src/SummoningEngine.sol";
 ///         resolveEpoch() is public — any wallet can call it.
 ///
 /// Required env vars:
-///   DEPLOYER_PRIVATE_KEY       — any funded wallet
 ///   SUMMONING_ENGINE_ADDRESS   — Sepolia SummoningEngine address
+///
+/// Usage with encrypted keystore:
+///   forge script script/ResolveSepoliaEpoch.s.sol:ResolveSepoliaEpoch \
+///     --account deployer --sender 0x... --rpc-url $SEPOLIA_RPC_URL --broadcast
 contract ResolveSepoliaEpoch is Script {
     function run() external {
-        uint256 privateKey = vm.envUint("DEPLOYER_PRIVATE_KEY");
         address engineAddr = vm.envAddress("SUMMONING_ENGINE_ADDRESS");
 
         SummoningEngine engine = SummoningEngine(engineAddr);
@@ -23,7 +25,7 @@ contract ResolveSepoliaEpoch is Script {
         require(!ep.resolved, "Epoch already resolved");
         require(block.timestamp >= ep.ritualEnd, "Ritual phase not over");
 
-        vm.startBroadcast(privateKey);
+        vm.startBroadcast();
         engine.resolveEpoch();
         vm.stopBroadcast();
 
