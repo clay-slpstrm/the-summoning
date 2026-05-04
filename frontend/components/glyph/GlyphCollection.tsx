@@ -12,6 +12,7 @@ import { GLYPH_TIERS } from "@/lib/constants";
 
 export default function GlyphCollection() {
   const glyphs = useGlyphStore((s) => s.glyphs);
+  const setSelectedGlyph = useGlyphStore((s) => s.setSelectedGlyph);
 
   if (glyphs.length === 0) {
     return (
@@ -36,9 +37,10 @@ export default function GlyphCollection() {
           const tier = GLYPH_TIERS.find((t) => t.name === glyph.tierName) || GLYPH_TIERS[0];
           const isNewest = i === 0;
           return (
-            <div
+            <button
               key={glyph.txHash || i}
-              className={`glyph-cell group ${isNewest ? "animate-glyph-enter" : ""}`}
+              onClick={() => setSelectedGlyph(glyph)}
+              className={`glyph-cell group cursor-pointer focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-void ${isNewest ? "animate-glyph-enter" : ""}`}
               style={{
                 background: tier.bg,
                 borderColor: tier.color + "44",
@@ -46,7 +48,7 @@ export default function GlyphCollection() {
                   ? `0 0 16px ${tier.glow}, 0 0 32px ${tier.glow}`
                   : `0 0 8px ${tier.glow}`,
               }}
-              title={`${glyph.tierName} Glyph: ${glyph.rune}\n"${glyph.lore}"`}
+              title={`${glyph.tierName} Glyph: ${glyph.rune} — click for details`}
             >
               <span
                 className="transition-transform duration-200 group-hover:scale-125"
@@ -65,7 +67,7 @@ export default function GlyphCollection() {
                   NEW
                 </span>
               )}
-            </div>
+            </button>
           );
         })}
       </div>

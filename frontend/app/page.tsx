@@ -6,6 +6,7 @@ import { MintInterface } from "@/components/mint/MintInterface";
 import GlyphReveal from "@/components/glyph/GlyphReveal";
 import ChannelingOverlay from "@/components/glyph/ChannelingOverlay";
 import GlyphCollection from "@/components/glyph/GlyphCollection";
+import GlyphDetailModal from "@/components/glyph/GlyphDetailModal";
 import Portal from "@/components/portal/Portal";
 import EpochStatus from "@/components/epoch/EpochStatus";
 import CultRankBar from "@/components/rank/CultRankBar";
@@ -40,6 +41,7 @@ export default function Home() {
       {/* Full-screen glyph reveal modal */}
       <ChannelingOverlay />
       <GlyphReveal />
+      <GlyphDetailModal />
 
       {/* Content */}
       <div className="relative z-10 max-w-[900px] mx-auto px-3 sm:px-4 py-4 sm:py-6">

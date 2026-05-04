@@ -39,9 +39,13 @@ type GlyphStore = {
   removePending: (requestId: string) => void;
   clearPending: () => void;
 
-  // Reveal modal
+  // Reveal modal (gacha animation, fired on fresh mint)
   revealGlyph: GlyphData | null;
   setRevealGlyph: (glyph: GlyphData | null) => void;
+
+  // Detail modal (user-initiated, opened by clicking a glyph in the collection)
+  selectedGlyph: GlyphData | null;
+  setSelectedGlyph: (glyph: GlyphData | null) => void;
 
   // Tier counts (derived but cached for perf)
   getTierCount: (tierName: string) => number;
@@ -72,6 +76,10 @@ export const useGlyphStore = create<GlyphStore>((set, get) => ({
   revealGlyph: null,
 
   setRevealGlyph: (glyph) => set({ revealGlyph: glyph }),
+
+  selectedGlyph: null,
+
+  setSelectedGlyph: (glyph) => set({ selectedGlyph: glyph }),
 
   getTierCount: (tierName) =>
     get().glyphs.filter((g) => g.tierName === tierName).length,

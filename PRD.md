@@ -255,7 +255,8 @@ Player wants another pull → Repeat
 - Grid layout: `repeat(auto-fill, minmax(52px, 1fr))` — responsive, fills available width
 - Each cell shows the rune symbol with tier-colored glow and background
 - Newest glyph animates in with `glyph-enter` animation (scale 0.5→1, cubic-bezier bounce, 0.5s), a "NEW" badge in the tier color, and a double-intensity glow
-- Hover/tap on glyph shows tooltip: tier name, rune, lore text. Hover scales the rune symbol (1.25x)
+- Hover/tap on glyph shows tooltip: tier name, rune, lore text. Hover scales the cell (1.10x) and brightens it (1.25x) to signal clickability.
+- **Click on glyph opens a detail modal** (`GlyphDetailModal`) with: large rune render with tier glow, tier name + rarity narrative + baseline drop rate, full lore quote, rune index (e.g. "ᚦ — 22 of 30"), epoch + Old One name, on-chain token ID, and external links to OpenSea and Etherscan. Dismissed by Esc, backdrop click, or close button. This is the destination for the gacha pull — gives the user a place to appreciate the NFT's value beyond the reveal animation.
 - Sort order: newest first (most recent glyph top-left)
 - Tier count summary bar above grid: shows count per tier (e.g., "Whisper: 12, Echo: 7, Tremor: 3, Rupture: 1, Breach: 0")
 - Each tier count uses the tier's signature color

@@ -143,7 +143,8 @@ the-summoning/
 │   │   ├── claim/
 │   │   │   └── ClaimArtifact.tsx     # Post-resolution artifact claim card
 │   │   ├── glyph/
-│   │   │   ├── GlyphReveal.tsx       # Full-screen gacha reveal
+│   │   │   ├── GlyphReveal.tsx       # Full-screen gacha reveal (auto, on mint)
+│   │   │   ├── GlyphDetailModal.tsx  # Click-to-open detail modal (user-initiated)
 │   │   │   ├── ChannelingOverlay.tsx # VRF wait animation
 │   │   │   ├── GlyphCollection.tsx
 │   │   │   ├── GlyphCard.tsx
@@ -1031,9 +1032,16 @@ export async function updateCultRank(wallet: string) {
 
 #### GlyphCollection.tsx
 - CSS Grid: `repeat(auto-fill, minmax(44px, 1fr))`
-- Each cell shows the rune symbol with tier-colored glow
-- Hover scales the rune symbol (1.25x via `group-hover:scale-125`); title attribute shows tier name + lore
+- Each cell is a `<button>` that calls `setSelectedGlyph(glyph)` from the glyphStore — opens the `GlyphDetailModal`.
+- Hover scales the cell (1.10x) and brightens it (1.25x) to signal clickability; title attribute shows tier name + rune + "click for details" hint
 - Newest glyph gets `animate-glyph-enter` (scale 0.5→1, cubic-bezier bounce), a "NEW" badge in tier color, and double-intensity glow
+
+#### GlyphDetailModal.tsx
+- Reads `selectedGlyph` from glyphStore. Mounted globally in `app/page.tsx` alongside `GlyphReveal` and `ChannelingOverlay`.
+- AnimatePresence-driven entrance/exit. Dismissed via Escape key, backdrop click, or × button.
+- Layout: large rune render (128–144px) with tier gradient bg + tier-color glow ring, tier heading in tier color, rarity label ("Common" / "Uncommon" / "Rare" / "Legendary" / "Mythic") + baseline drop rate, full lore quote in serif italic, stats grid (rune index, epoch + Old One, token ID), and external link buttons to OpenSea + Etherscan.
+- Marketplace links built from `ELDRITCH_GLYPHS_ADDRESS` and `isMainnet` flag — Sepolia uses `testnets.opensea.io` / `sepolia.etherscan.io`, mainnet uses primary domains.
+- Distinct from `GlyphReveal` — that fires on a fresh mint (gacha animation), this fires on user click (collection inspection).
 
 #### EpochStatus.tsx
 - Reads epoch data directly from SummoningEngine contract via `useEpochProgress` hook

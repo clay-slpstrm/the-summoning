@@ -102,7 +102,7 @@
   .glyph-cell {
     @apply aspect-square rounded-md flex items-center justify-center
            text-xl border border-void-border transition-all duration-300
-           relative cursor-default;
+           relative cursor-pointer hover:scale-110 hover:brightness-125;
   }
 
   .stat-box {
