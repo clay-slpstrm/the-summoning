@@ -275,7 +275,7 @@ Player wants another pull → Repeat
 
 **Acceptance Criteria**:
 - Epoch status bar at top of page showing:
-  - Current phase (Gathering / Ritual / Resolved) with colored indicator
+  - Current phase (Gathering / Ritual / Pending Resolution / Resolved) with colored indicator
   - Countdown timer to next phase transition (HH:MM:SS, updates every second)
   - Old One name/identity for current epoch
   - User's cult rank (with rank color)
@@ -285,7 +285,8 @@ Player wants another pull → Repeat
   - Bar color shifts from purple to red as progress approaches 100%
   - Glow effect intensifies as threshold approaches
 - Updates in real-time via WebSocket (backend broadcasts on each sacrifice)
-- When epoch resolves:
+- **Pending Resolution state** (`block.timestamp >= ritualEnd && !epoch.resolved`): the time-derived phase has flipped to Resolved but `resolveEpoch()` hasn't been called on-chain yet (e.g., Chainlink Automation lag). Badge reads "PENDING RESOLUTION" in amber with the copy "Awaiting Chainlink Automation to finalize…". Outcome badge (`✦ SUMMONED` / `✕ FAILED`) is hidden until on-chain `epoch.resolved=true`. Prevents the UI from displaying an outcome the contract hasn't yet committed.
+- When epoch resolves on-chain (`epoch.resolved=true`):
   - Success: celebratory animation, "THE OLD ONE HAS BEEN SUMMONED" message
   - Failure: somber animation, "The summoning failed... the veil holds... for now."
 
@@ -347,9 +348,9 @@ Player wants another pull → Repeat
 **User Story**: As a user who contributed to a resolved epoch, I want to claim my artifact directly from the main page without navigating elsewhere or guessing my tier.
 
 **Acceptance Criteria**:
-- Card renders only when `epoch.phase === "Resolved"` and the connected wallet has a non-zero `getContribution(epochId, wallet)`.
-- Replaces the SacrificePanel slot during the Resolved phase (same column position).
-- Predicts tier client-side using the contract's `_calculateTier` formula (avg = totalCommitted / participantCount; ≥10× avg → Harbinger, ≥3× avg → Acolyte, else Cultist; failed epochs → Shattered).
+- Card renders only when **`epoch.resolved === true`** on-chain (not just when phase reads as Resolved — those can diverge if `resolveEpoch()` hasn't been called yet) **and** the connected wallet has a non-zero `getContribution(epochId, wallet)`.
+- Replaces the SacrificePanel slot once the epoch is resolved on-chain. During the in-between "Pending Resolution" window (`phase==="Resolved" && !epoch.resolved`), an "Awaiting Resolution" placeholder card renders instead of the claim card.
+- Predicts tier client-side using the contract's `_calculateTier` formula (avg = totalCommitted / participantCount; ≥10× avg → Harbinger, ≥3× avg → Acolyte, else Cultist; failed epochs → Shattered). **Edge case**: a sole contributor's contribution always equals the avg, so the `≥10× avg` Harbinger threshold is unreachable solo — the lone summoner caps at Cultist (tier 3) on success. By design until tier formula is rebalanced.
 - Shows: predicted tier name (heading), tier flavor copy, the user's contribution amount, and the epoch outcome (✦ Summoned / ✕ Failed).
 - Button calls `claimReward(epochId)` and progresses through "Confirm in wallet..." → "Claiming..." → success state.
 - Success state is sticky for the session: shows tier name, flavor, and the artifact's ERC-1155 token ID (`epochId * 1000 + tierId`). After page reload, the contribution is zero on-chain and the card hides.

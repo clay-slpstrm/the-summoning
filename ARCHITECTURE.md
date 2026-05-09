@@ -732,7 +732,25 @@ called in the active pipeline. The `RitualSacrifice` event listener now only bro
 
 ---
 
-### 4.3 Epoch Sync Service
+### 4.3 Glyph Backfill (Startup)
+
+Public RPCs garbage-collect long-lived event filters and the backend itself can be down during a VRF callback. Either case can drop a `GlyphMinted` event from the live watcher, leaving an on-chain glyph that's invisible to the UI (frontend reads from the DB; the DB has no record).
+
+The backfill service (`backend/src/services/backfill.ts`) runs once on every backend startup, **before** the live watchers are attached:
+
+1. Fetches the current head block from the configured RPC.
+2. Scans `head - 5000 → head` for `GlyphMinted` events on `EldritchGlyphs`, chunked into 1,000-block windows (public RPCs cap `getLogs` ranges).
+3. Pipes each event through the existing `handleGlyphMinted` handler — idempotent thanks to its `findFirst` check on `tokenId`. Already-indexed glyphs are no-ops; previously-missed ones get persisted.
+
+Mounted from `index.ts` as a `Promise.then(startGlyphEventListener)` chain so the live listener doesn't start until backfill completes.
+
+**Limitations**:
+- WebSocket pushes during backfill (`glyph_pending`, `glyph_reveal`) go to no recipient — the user's WS hasn't connected yet — so the gacha reveal animation is *not* replayed on backfill. The user sees the glyph in their collection on next REST hydrate, but without animation. Acceptable trade-off; replaying old reveals would feel weirder than missing them.
+- The 5,000-block window covers ~16 hours on Ethereum. Longer downtime requires either a manual run with a wider range or a `last_indexed_block` checkpoint (deferred until needed).
+
+---
+
+### 4.4 Epoch Sync Service
 
 Keeps the `EpochCache` database table in sync with on-chain state. Without this, `/api/epochs/current` would always return null because nothing writes to the table.
 
@@ -766,7 +784,7 @@ export function startEpochSync(intervalMs = 60_000): void {
 
 ---
 
-### 4.4 Event Listener
+### 4.5 Event Listener
 
 Listens for on-chain `RitualSacrifice` events and feeds them to the Glyph Engine.
 
@@ -816,9 +834,15 @@ export function startEventListener() {
 }
 ```
 
+**Polling cadence and onError handling** (lessons from Sepolia test):
+
+- All `watchEvent` calls pass `pollingInterval: 4000` (default is ~1s). Five active watchers × 1s polling overwhelmed rate-limited public RPCs and starved the HTTP server's event loop. 4s is the sweet spot — slow enough to coexist with public-node limits, fast enough that event latency stays under 5s.
+- `onError` handlers **log only** — they do not recursively restart the parent listener function. viem auto-reconnects the filter on the next polling tick, so a recursive `setTimeout(() => startEventListener(), 5000)` would spawn a parallel watcher on top of the existing one. Each subsequent error spawns another, and the process collapses under accumulated polls within a minute. Trust viem's internal retry; just log the error message.
+- For mainnet, switch the transport to a dedicated RPC's WebSocket endpoint (`wss://...`) — events arrive as push notifications, no polling, no filter expirations.
+
 ---
 
-### 4.5 WebSocket Manager
+### 4.6 WebSocket Manager
 
 Manages per-wallet WebSocket connections for real-time glyph delivery.
 
@@ -882,7 +906,7 @@ export const wsManager = new WSManager();
 
 ---
 
-### 4.6 REST API Endpoints
+### 4.7 REST API Endpoints
 
 ```
 GET  /api/glyphs/:wallet           → Confirmed glyph collection for a wallet (status: "confirmed" only)
@@ -938,7 +962,7 @@ GET  /health                       → Health check
 
 ---
 
-### 4.7 Cult Rank Calculation
+### 4.8 Cult Rank Calculation
 
 ```typescript
 // backend/src/services/leaderboard.ts
@@ -1019,11 +1043,11 @@ export async function updateCultRank(wallet: string) {
 - Checks allowance → prompts `approve()` if needed → calls `commitRitual(amount)`
 - Button states: "APPROVE & SACRIFICE" / "CONFIRM IN WALLET..." / "SACRIFICING..." / "SACRIFICE ACCEPTED" / "WAIT Xs" (cooldown)
 - Reads `lastSacrificeTime(wallet)` from SummoningEngine to preempt the on-chain `SACRIFICE_COOLDOWN` (30s). When the wallet is inside the cooldown window, the button is disabled and shows a live countdown derived from a 1s-tick `setInterval`. Prevents users from signing a tx that will revert.
-- Only visible during Ritual phase. During Gathering phase, `page.tsx` shows guidance text ("Sacrifice opens soon"); during Resolved phase it's replaced by `ClaimArtifact`.
+- Only visible during Ritual phase. `page.tsx` switches the slot by phase: Gathering → "Sacrifice opens soon" guidance; Resolved-but-not-yet-on-chain-resolved → "Awaiting Resolution" pending card; Resolved (on-chain) → `ClaimArtifact`.
 - After success, shows a glowing container: "The void accepts your offering" + "VRF requested — channeling your glyph..." while ChannelingOverlay activates
 
 #### ClaimArtifact.tsx
-- Renders only when `epoch.phase === "Resolved"` and the connected wallet has a non-zero `getContribution(epochId, wallet)` from SummoningEngine.
+- Renders only when **`epoch.resolved === true`** on-chain (not the time-derived `phase` — those diverge when `resolveEpoch()` hasn't fired yet) **and** the connected wallet has a non-zero `getContribution(epochId, wallet)` from SummoningEngine. Gating on `phase === "Resolved"` would cause claim attempts during the pending window to revert with `EpochNotResolved`.
 - Mirrors the contract's `_calculateTier` formula client-side to predict the tier the user will receive: `avg = totalCommitted / participantCount`; `contribution >= avg * 10` → Harbinger (1), `>= avg * 3` → Acolyte (2), else Cultist (3); failed epochs always → Shattered Ritual (0).
 - Calls `useClaimReward(epochId)` from `useSummoning.ts`. Progresses through "Confirm in wallet..." → "Claiming..." → success state.
 - Success state is sticky for the session: shows tier name, flavor copy, ERC-1155 token ID (`epochId * 1000 + tierId`). On reload, the on-chain contribution reads as 0 (zeroed by the contract on claim) and the card hides naturally.
@@ -1048,7 +1072,8 @@ export async function updateCultRank(wallet: string) {
 - Shows: Old One name/subtitle, phase badge (color-coded), live countdown
 - Includes `ProgressBar.tsx` — purple→red gradient bar with `COLLECTIVE PROGRESS` label
 - Includes `Countdown.tsx` — updates every second, formats as `Xd Xh Xm` or `HH:MM:SS`
-- Phase-dependent display: Gathering shows "Ritual begins in", Ritual shows "Ritual ends in", Resolved shows success/failure badge
+- Phase-dependent display: Gathering shows "Ritual begins in", Ritual shows "Ritual ends in", Resolved (on-chain) shows ✦ SUMMONED / ✕ FAILED
+- **Pending Resolution state**: derived as `isPendingResolution = phase==="Resolved" && !epoch.resolved`. The contract's `getCurrentPhase()` returns Resolved as soon as `block.timestamp >= ritualEnd`, even before `resolveEpoch()` has been called on-chain. In that window, the badge is replaced with an amber "PENDING RESOLUTION" pill and the success/failure outcome is suppressed. The phase badge background and text colors switch to the warning palette (`#F59E0B` border / `#FCD34D` text). Resolves automatically once the upkeep fires and `epoch.resolved` flips to `true`.
 - Shows portal stage name and participant count
 
 #### ChannelingOverlay.tsx
@@ -1483,20 +1508,33 @@ Step 31: Slither static analysis — clean, 1 minor fix (string.concat) ✅
 Step 32: forge test 10,000 fuzz runs — 183 tests, 0 failures          ✅
 Step 33: Competitive audit                                     (deferred — revisit post-revenue)
 Step 34: Deploy to mainnet staging (with low threshold test epoch)
-Step 35: Set up domain, ENS name, SSL
-Step 36: Set up monitoring + alerting on backend
-Step 37: Begin teaser campaign on Twitter/X
+Step 35: forge verify-bytecode against committed source for ALL 5
+         contracts. Sepolia divergence (durations + Automation
+         interface) was caught twice; mainnet must match source 1:1.
+         Abort the launch if any contract diverges.
+Step 36: Live `cast call checkUpkeep(0x)` post-deploy on the
+         SummoningEngine — must return without reverting before
+         registering Chainlink Automation upkeep. A reverting
+         checkUpkeep silently disables the upkeep.
+Step 37: Production metadata hosting — point ElderArtifacts
+         setBaseURI to a stable HTTPS endpoint (api.thesummoning.xyz
+         or IPFS-pinned static JSON). Default deploy URI is a
+         placeholder; marketplaces show lorem-ipsum if left as-is.
+Step 38: Set up domain, ENS name, SSL
+Step 39: Set up monitoring + alerting on backend (esp. event-listener
+         heartbeat — runaway-loop bug went undetected for hours)
+Step 40: Begin teaser campaign on Twitter/X
 ```
 
 ### Week 5–6: Launch
 
 ```
-Step 38: Apply audit fixes (if any)
-Step 39: Final mainnet deployment with production parameters
-Step 40: Configure first epoch: Cthulhu, threshold calibrated to expected participation
-Step 41: Announce first epoch, open minting
-Step 42: Host launch event (Twitter Space during final ritual hour)
-Step 43: Monitor, respond to issues, celebrate
+Step 41: Apply audit fixes (if any)
+Step 42: Final mainnet deployment with production parameters
+Step 43: Configure first epoch: Cthulhu, threshold calibrated to expected participation
+Step 44: Announce first epoch, open minting
+Step 45: Host launch event (Twitter Space during final ritual hour)
+Step 46: Monitor, respond to issues, celebrate
 ```
 
 ---
