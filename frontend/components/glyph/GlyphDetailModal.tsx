@@ -2,9 +2,15 @@
 
 import { useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
+import { useReadContract } from "wagmi";
+import { sepolia } from "wagmi/chains";
 import { useGlyphStore } from "@/stores/glyphStore";
 import { GLYPH_TIERS, OLD_ONES, RUNE_SHAPES } from "@/lib/constants";
-import { ELDRITCH_GLYPHS_ADDRESS } from "@/lib/contracts";
+import {
+  ELDRITCH_GLYPHS_ADDRESS,
+  SUMMONING_ENGINE_ADDRESS,
+  SUMMONING_ENGINE_ABI,
+} from "@/lib/contracts";
 import { isMainnet } from "@/lib/chains";
 
 const TIER_RARITY_LABEL: Record<string, string> = {
@@ -63,8 +69,20 @@ function GlyphDetailContent({
   onClose: () => void;
 }) {
   const tier = GLYPH_TIERS.find((t) => t.name === glyph.tierName) ?? GLYPH_TIERS[0];
-  const oldOne = OLD_ONES.find((o) => o.id === ((glyph.epochId - 1) % OLD_ONES.length) + 1);
   const runeIndex = RUNE_SHAPES.indexOf(glyph.rune as (typeof RUNE_SHAPES)[number]);
+
+  // Look up the actual oldOneId for this epoch on-chain — owner picks per epoch,
+  // not derivable from epochId via modulo.
+  const { data: epochData } = useReadContract({
+    address: SUMMONING_ENGINE_ADDRESS,
+    abi: SUMMONING_ENGINE_ABI,
+    functionName: "getEpoch",
+    args: [BigInt(glyph.epochId)],
+    chainId: sepolia.id,
+  });
+
+  const oldOneId = epochData ? Number(epochData[0]) : 0;
+  const oldOne = oldOneId > 0 ? OLD_ONES.find((o) => o.id === oldOneId) : undefined;
   const rarityLabel = TIER_RARITY_LABEL[glyph.tierName] ?? "Glyph";
   const baseRate = TIER_BASE_RATE[glyph.tierName] ?? "—";
 
