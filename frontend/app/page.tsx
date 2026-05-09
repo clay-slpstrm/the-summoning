@@ -94,11 +94,18 @@ export default function Home() {
           <EpochStatus />
         </div>
 
-        {/* Sacrifice / Claim panel — depends on epoch phase */}
+        {/* Sacrifice / Claim / Pending panel — depends on phase + on-chain resolved flag */}
         {address && epoch && (
           <div className="max-w-md mx-auto mt-6 sm:mt-8">
             {epoch.phase === "Ritual" ? (
               <SacrificePanel epoch={epoch} />
+            ) : epoch.phase === "Resolved" && !epoch.resolved ? (
+              <div className="card text-center py-6 space-y-2">
+                <div className="section-label" style={{ color: "#FCD34D" }}>Awaiting Resolution</div>
+                <p className="text-xs sm:text-sm text-gray-300 italic">
+                  The ritual window has closed. Chainlink Automation will finalize the outcome shortly. Rewards will appear here once resolution is on-chain.
+                </p>
+              </div>
             ) : epoch.phase === "Resolved" ? (
               <ClaimArtifact epoch={epoch} />
             ) : epoch.phase === "Gathering" ? (

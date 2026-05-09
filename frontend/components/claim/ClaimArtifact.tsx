@@ -38,7 +38,7 @@ export default function ClaimArtifact({ epoch }: { epoch: EpochData }) {
     functionName: "getContribution",
     args: address ? [BigInt(epoch.epochId), address] : undefined,
     chainId: sepolia.id,
-    query: { enabled: !!address && epoch.phase === "Resolved" },
+    query: { enabled: !!address && epoch.resolved },
   });
 
   const { claimReward, isPending, isConfirming, isSuccess } = useClaimReward();
@@ -55,7 +55,10 @@ export default function ClaimArtifact({ epoch }: { epoch: EpochData }) {
     }
   }, [isSuccess, tierId, refetch]);
 
-  if (epoch.phase !== "Resolved" || !address) return null;
+  // Gate on the on-chain `resolved` flag, not the time-derived phase.
+  // The contract's getCurrentPhase() returns Resolved once block.timestamp >= ritualEnd
+  // even before resolveEpoch() has been called — claiming during that window reverts.
+  if (!epoch.resolved || !address) return null;
 
   // Success state — sticky until reload
   if (claimedTier !== null) {

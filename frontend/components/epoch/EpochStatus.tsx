@@ -76,6 +76,11 @@ export default function EpochStatus() {
       ? epoch.successful ? "#FCD34D" : "#CBD5E1"
       : PHASE_TEXT_COLOR[epoch.phase] ?? "#CBD5E1";
 
+  // The contract returns phase="Resolved" once block.timestamp >= ritualEnd,
+  // even before resolveEpoch() is actually called. Distinguish that limbo state
+  // so the UI doesn't claim outcomes that haven't been written on-chain yet.
+  const isPendingResolution = epoch.phase === "Resolved" && !epoch.resolved;
+
   const countdownTarget =
     epoch.phase === "Gathering" ? epoch.ritualStart :
     epoch.phase === "Ritual" ? epoch.ritualEnd : 0;
@@ -98,12 +103,12 @@ export default function EpochStatus() {
         <div
           className="text-[12px] sm:text-[13px] tracking-[1.5px] sm:tracking-[2px] uppercase font-mono font-bold px-1.5 sm:px-2 py-1 rounded whitespace-nowrap"
           style={{
-            color: phaseTextColor,
-            border: `1px solid ${phaseColor}66`,
-            background: `${phaseColor}11`,
+            color: isPendingResolution ? "#FCD34D" : phaseTextColor,
+            border: `1px solid ${isPendingResolution ? "#F59E0B" : phaseColor}66`,
+            background: `${isPendingResolution ? "#F59E0B" : phaseColor}11`,
           }}
         >
-          {PHASE_LABEL[epoch.phase]}
+          {isPendingResolution ? "PENDING RESOLUTION" : PHASE_LABEL[epoch.phase]}
         </div>
 
         {countdownTarget > 0 && (
@@ -117,12 +122,18 @@ export default function EpochStatus() {
           </div>
         )}
 
-        {epoch.phase === "Resolved" && (
+        {epoch.phase === "Resolved" && epoch.resolved && (
           <div
             className="text-[14px] sm:text-[15px] font-mono tracking-widest font-bold"
             style={{ color: phaseTextColor }}
           >
             {epoch.successful ? "✦ SUMMONED" : "✕ FAILED"}
+          </div>
+        )}
+
+        {isPendingResolution && (
+          <div className="text-[12px] sm:text-[13px] text-gray-300 italic max-w-[180px] text-right">
+            Awaiting Chainlink Automation to finalize&hellip;
           </div>
         )}
       </div>
