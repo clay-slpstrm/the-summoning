@@ -44,7 +44,15 @@ Beyond these, the bracketed tier-weight design (H-01) inverts the intended whale
 
 The remaining HIGH findings (no emergency pause, MEV exposure, no supply cap) are standard hardening gaps that should be closed before launch.
 
-**Recommendation:** Do not deploy to mainnet until C-01, C-02, and H-01 are addressed. Estimated remediation effort: 1–2 days of contract work plus test re-execution.
+**Chosen remediation (confirmed by project owner during audit review):** A single architecture change — **decouple sacrifice from glyph minting** — closes C-01, H-01, and H-04 together:
+
+- `commitRitual(amount)` burns RITUAL, contributes to the epoch threshold, and updates lifetime contribution. **No VRF request fires.** Minimum sacrifice stays at 1 RITUAL, preserving low-barrier participation in the collective summoning.
+- After the epoch resolves, `claimGlyphs(epochId)` issues **one** VRF request returning `contributions[epochId][wallet] / 100e18` random words. Each random word mints one glyph at the tier bracket determined by the wallet's cumulative contribution to that epoch (per-epoch — does not carry over to future epochs).
+- 100 RITUAL is both the glyph-qualification threshold and the glyph-count divisor. Below 100, no glyphs are minted; the wallet still earns the new **Initiate** cult rank for lifetime participation.
+
+VRF cost becomes one fixed payment per wallet per epoch, regardless of how the wallet split its sacrifices. Splitting and concentrating produce identical glyph counts and identical odds. Protocol is net-positive at every valid claim path (~+$0.45 per glyph minted at the threshold, scaling up with higher brackets).
+
+**Recommendation:** Implement the batched-claim redesign for C-01/H-01/H-04, the one-line zero-output revert for C-02, plus Phase 2 hardening (Pausable, MEV protection, max supply, solo-Harbinger). Estimated effort: 2–3 days of focused contract work plus a Sepolia rehearsal.
 
 ---
 
@@ -108,12 +116,12 @@ This audit should be treated as a **complement** to, not a replacement for:
 
 | ID | Title | Severity | Status |
 |---|---|---|---|
-| C-01 | VRF subscription drain via cheap sacrifice spam | Critical | Open |
-| C-02 | Free-mint extraction at small ETH inputs | Critical | Open |
-| H-01 | Whale incentive inversion in tier brackets | High | Open |
+| C-01 | VRF subscription drain via cheap sacrifice spam | Critical | Open — fix design locked (batched claim + 100-RITUAL qualification) |
+| C-02 | Free-mint extraction at small ETH inputs | Critical | Open — fix design locked (one-line revert on zero output) |
+| H-01 | Whale incentive inversion in tier brackets | High | Open — resolved by C-01 fix (cumulative bracketing) |
 | H-02 | No emergency pause mechanism | High | Open |
 | H-03 | MEV exposure via frontend default `minTokens=0` | High | Open |
-| H-04 | Sybil wallets bypass per-wallet sacrifice cooldown | High | Open |
+| H-04 | Sybil wallets bypass per-wallet sacrifice cooldown | High | Open — largely resolved by C-01 fix (per-wallet-per-epoch VRF) |
 | H-05 | No max supply on RITUAL; treasury unbounded | High | Open |
 | M-01 | Solo contributor cannot reach Harbinger tier | Medium | Open |
 | M-02 | `withdraw` has no timelock | Medium | Open |
@@ -179,52 +187,79 @@ Sybil wallets defeat the 30s per-wallet cooldown entirely — with 20 wallets, 2
 - Reputational damage if observed publicly during launch.
 - Indirect Automation impact: if a single LINK funding pool is shared (it is not in current design — separate subscriptions for VRF vs Automation), Automation upkeeps could also stall, leaving epochs unresolved.
 
-#### Recommendation
+#### Recommendation — Chosen Design
 
-Multiple paths. In order of preference:
+After discussion with the project owner, the chosen remediation is a **batched-claim redesign with a cumulative qualification threshold**, which closes both C-01 and H-01 simultaneously with a single architecture change. The model preserves the 1-RITUAL entry point (so small participants can join the summoning ritual) while making glyphs a true status item that requires meaningful commitment.
 
-**Option A — Raise `MIN_SACRIFICE` to break-even** *(simplest, recommended)*
+**Design parameters:**
 
 ```solidity
-// SummoningEngine.sol
-uint256 public constant MIN_SACRIFICE = 100e18; // was 1e18
+uint256 public constant MIN_SACRIFICE = 1e18;     // 1 RITUAL — anyone can participate
+uint256 public constant GLYPH_UNIT    = 100e18;   // 100 RITUAL per glyph earned
+                                                  // (doubles as qualification threshold)
 ```
 
-At 100 RITUAL minimum, mint fee per sacrifice = ~$4.20 vs VRF cost ~$3.75. Net positive ~$0.45 per sacrifice. Closes the attack with one line of code. Note that this reverts a recent change made in commit `0c6fa2d` — the rationale at that time (lower entry barrier) is real, but it was made without accounting for VRF economics.
+**Mechanism:**
 
-**Option B — Cap glyphs-per-wallet-per-epoch**
+1. **Sacrifice phase (during the Ritual window) — no VRF:**
+   - `commitRitual(amount)` burns the RITUAL, updates `contributions[epochId][wallet]` and `lifetimeContribution[wallet]`, and contributes to the epoch threshold.
+   - **No VRF request is issued.** No glyph is minted yet.
+   - All sacrifices count toward the collective summoning regardless of size.
 
-Add a counter:
-```solidity
-mapping(uint256 => mapping(address => uint256)) public glyphsClaimedThisEpoch;
-uint256 public constant MAX_GLYPHS_PER_WALLET_PER_EPOCH = 25;
+2. **Claim phase (after `epoch.resolved == true`) — one VRF per wallet per epoch:**
+   - `claimGlyphs(epochId)` reads the wallet's cumulative contribution to *this* epoch only:
+     ```solidity
+     uint256 contribution = contributions[epochId][msg.sender];
+     uint256 glyphsEarned = contribution / GLYPH_UNIT;  // integer division
+     ```
+   - If `glyphsEarned == 0` (contribution below 100 RITUAL): revert with `NoGlyphsEarned`. The wallet still gets credit for participation in the collective ritual + lifetime contribution, but no NFT.
+   - Otherwise issue **one** VRF request with `numWords: glyphsEarned`, capped at 50 per claim (callback-gas safety). Whales with > 50 glyphs earned call `claimGlyphs` in multiple batches.
+   - In `fulfillRandomWords`, derive each glyph's tier independently from its own `randomWords[i]`, all rolled against the bracket selected from cumulative contribution at claim time.
 
-// in commitRitual, before requestGlyph:
-if (glyphsClaimedThisEpoch[id][msg.sender] >= MAX_GLYPHS_PER_WALLET_PER_EPOCH) {
-    revert SummoningEngine__GlyphCapReached();
-}
-glyphsClaimedThisEpoch[id][msg.sender]++;
-```
+3. **Per-epoch scoping (critical, confirmed by owner):**
+   - The qualification threshold and the bracket are both computed from `contributions[epochId][wallet]`, which is keyed by epoch and resets to zero each new epoch. A wallet that contributed 50 RITUAL to epoch 1 and 50 RITUAL to epoch 2 earns **zero glyphs** from either — they never crossed 100 in any single epoch. No cross-epoch carry-over.
+   - `lifetimeContribution[wallet]` accumulates separately and powers the new Initiate cult rank (see Remediation Roadmap).
 
-Bounds the per-wallet drain. Sybils still cost gas to deploy. Combine with a lower MIN_SACRIFICE if you want to keep 1-RITUAL entry.
+**Economic outcomes:**
 
-**Option C — Native LINK payment (V2.5 feature)**
+| Cumulative this epoch | Glyphs earned | Bracket | VRF requests | Protocol net (mint fee minus VRF) |
+|---|---|---|---|---|
+| 1–99 RITUAL | 0 | n/a | 0 | +mint fee, no VRF cost |
+| 100 RITUAL | 1 | 2 | 1 | +$4.20 - $3.75 = **+$0.45** |
+| 999 RITUAL | 9 | 2 | 1 | +$42 - ~$3.83 = **+$38** |
+| 1,000 RITUAL | 10 | 3 | 1 | **+$38+** |
+| 5,000 RITUAL | 50 | 3 | 1 | **+$206+** |
+| 10,000 RITUAL | 100 | 4 | 2 (two batches of 50) | **+$413+** |
 
-Change `nativePayment: false` to `true` in `requestGlyph()` and require the user to supply LINK with their sacrifice. Shifts cost to user but breaks UX significantly (most users don't hold LINK).
+Protocol is net-positive at every valid claim path. Splitting and concentrating produce identical outcomes (same glyph count and same bracket), eliminating H-01's incentive inversion. Sybils still cost gas + minimum-RITUAL-to-qualify per wallet (~$40), bounding H-04.
 
-**Option D — Skip glyph mint below a threshold**
+**Why this is preferable to the simpler "raise MIN to 100" fix:**
 
-Sacrifice still burns tokens and counts toward epoch threshold, but glyph mint is skipped for `amount < X`. Preserves low-entry sacrificing without the VRF cost. Breaks the gacha feedback loop for small players.
-
-**Combined fix (recommended):** Implement Option A *and* Option B. Restores break-even economics and caps worst-case farming even from whales.
+- Preserves the low-barrier participation explicitly chosen in commit `0c6fa2d`.
+- Glyphs become a *commitment marker* rather than a participation receipt — better gacha psychology, scarcity reinforces value.
+- VRF cost is fixed per claim regardless of split, so cost is fully predictable for treasury planning.
+- The Initiate rank gives minnows progression without diluting glyph status.
 
 #### Tests Required
 
-- `test_RevertsBelowMin_1RITUAL` — confirm `MIN_SACRIFICE` enforced
-- `test_RevertsBelowMin_99RITUAL` — confirm just under
-- `test_AcceptsAtMin_100RITUAL` — confirm at exact min
-- `test_CapEnforcedAt25Glyphs` (if Option B) — confirm cap revert
-- Integration test verifying mint fees > VRF cost at all valid sacrifice amounts
+Contracts:
+- `test_Sacrifice_Burns_NoVRF_Below100` — sub-100 sacrifice burns tokens, contributes, fires no VRF request
+- `test_ClaimGlyphs_Reverts_BelowThreshold` — claim with cumulative < 100 reverts `NoGlyphsEarned`
+- `test_ClaimGlyphs_Mints_100RITUAL_OneGlyph` — exactly 1 glyph at 100 RITUAL cumulative
+- `test_ClaimGlyphs_Mints_550RITUAL_FiveGlyphs` — 5 glyphs at 550 (integer division)
+- `test_ClaimGlyphs_BracketFromCumulative` — confirm bracket = `_bracket(cumulative)`, not `_bracket(per_call)`
+- `test_ClaimGlyphs_CapsAt50_PerCall` — claim with > 50 earned reverts with overflow guidance or splits cleanly
+- `test_PerEpochReset` — wallet contributes 50 to epoch 1, 60 to epoch 2; both claims revert (no carry-over)
+- `test_OneVRFRequestRegardlessOfSplit` — 1 sacrifice of 1000 RITUAL and 1000 sacrifices of 1 RITUAL both produce exactly one VRF request when claimed
+- Fuzz: per-bracket distribution at each cumulative threshold matches expected weights (10k seeds per bracket)
+
+Backend:
+- Backfill handler updates for the new event shape (one `GlyphsBatchMinted` event vs many `GlyphMinted`).
+
+Frontend:
+- New `ClaimGlyphsPanel` rendering when `epoch.resolved && cumulativeContribution > 0`
+- Pack-opening reveal animation for batched glyphs
+- "Pending glyphs: N" indicator during the Ritual window
 
 ---
 
@@ -343,48 +378,14 @@ For 100 RITUAL of sacrifice budget:
 
 #### Recommendation
 
-Two design options, decision required:
+**Resolved by the C-01 chosen design.** The batched-claim model with cumulative bracketing closes H-01 as a side effect:
 
-**Option 1 — Mint multiple glyphs per sacrifice, scaled by amount**
+- Glyph count = `contribution / GLYPH_UNIT`, computed at claim time from epoch-scoped cumulative contribution. Splitting 1000 RITUAL into 1000 × 1-RITUAL sacrifices and concentrating 1000 RITUAL into a single sacrifice both produce the same `cumulativeContribution = 1000` and therefore the same 10 glyphs.
+- Bracket = `_bracket(cumulativeContribution)`, so the odds row is determined by total spend regardless of split.
 
-```solidity
-// In fulfillRandomWords or a similar callback path:
-uint256 glyphCount = pending.amount / 1e18;  // 1 glyph per whole RITUAL
-if (glyphCount > MAX_GLYPHS_PER_SACRIFICE) glyphCount = MAX_GLYPHS_PER_SACRIFICE;
+The incentive inversion is fully eliminated: splitting and concentrating are mathematically equivalent under the new design. Larger spend genuinely produces higher-tier odds via the cumulative bracket, restoring the whale-favoring mechanic the original tier table was designed for.
 
-for (uint256 i = 0; i < glyphCount; i++) {
-    // mint glyph with tier weights from _bracket(pending.amount)
-    // use different bits of randomWords[0] or request more numWords
-}
-```
-
-Sacrificing 100 RITUAL → mint 100 glyphs at Bracket 2 odds. Sacrificing 1 RITUAL → mint 1 glyph at Bracket 0 odds. Equivalent glyph count at both scales, but Bracket 2 odds produce more rare hits *per glyph*. The whale concentrating now strictly dominates the splitter.
-
-**Caveats:** Requires multiple `numWords` from VRF (cheaper than multiple requests, but still cost-scales). VRF callback gas budget must accommodate the loop. Glyph supply explodes if `MAX_GLYPHS_PER_SACRIFICE` is too high.
-
-**Option 2 — Bracket selected from cumulative per-wallet contribution to this epoch** *(recommended)*
-
-```solidity
-function _deriveTier(uint64 bits, uint256 cumulativeContribution) internal pure returns (uint8) {
-    uint16[5] memory w = _tierWeights(_bracket(cumulativeContribution));
-    // ... rest unchanged
-}
-
-// In EldritchGlyphs.requestGlyph, replace `amount` with the wallet's running total:
-// (requires SummoningEngine to pass `contributions[id][msg.sender]` instead of just `amount`)
-```
-
-After sacrificing 100 RITUAL cumulatively (regardless of split), all subsequent rolls are at Bracket 2. Splitting doesn't help — your *total* contribution determines your odds. Sybil wallets are forced to fund each one to its own bracket threshold, raising attack cost linearly.
-
-This is the smaller code change and stays closer to the original design intent.
-
-#### Tests Required
-
-For Option 2 (recommended):
-- `test_Bracket_LowersOnEachSacrifice` — sacrifice 5+5 RITUAL, observe second sacrifice at Bracket 1
-- `test_Bracket_AccumulatesAcrossWallet` — confirm cumulative tracking
-- `test_Bracket_ResetsPerEpoch` — new epoch starts back at Bracket 0
-- Fuzz: distribution at each cumulative threshold matches expected weights
+See C-01 "Tests Required" — the per-epoch reset and one-VRF-regardless-of-split tests cover both findings.
 
 ---
 
@@ -505,19 +506,18 @@ The 30-second `SACRIFICE_COOLDOWN` is enforced per-`msg.sender` via the `lastSac
 
 #### Recommendation
 
-Cooldown enforcement on a permissionless chain is fundamentally hard against sybils. Layered mitigations:
+**Largely resolved by the C-01 chosen design.** Under the batched-claim model:
 
-1. **Combine with H-01 Option 2** — cumulative bracketing per wallet means sybils don't gain rarity advantage; each new wallet still rolls at Bracket 0.
-2. **Cap glyphs-per-wallet-per-epoch** (also recommended in C-01 Option B).
-3. **Higher MIN_SACRIFICE** raises sybil cost (each wallet needs at least MIN_SACRIFICE worth of RITUAL, plus mint gas).
-4. **Optional:** require a small ETH deposit per wallet refunded on first claim — defeats throwaway wallets.
+- VRF cost is fixed per wallet per epoch (one request regardless of sacrifice count). Sybils still cost LINK once per wallet to claim, but no longer multiply VRF cost per sacrifice.
+- Each sybil wallet must independently cross the 100-RITUAL qualification threshold to earn any glyph at all. Splitting 1000 RITUAL across 10 sybils of 100 RITUAL each yields the same outcome as one wallet at 1000 RITUAL — but the sybil path costs ~10× the gas (10 wallet deployments + 10 RITUAL mints + 10 claim txs).
+- Each new sybil starts at zero cumulative contribution and rolls at Bracket 0 unless funded above each higher-bracket threshold, so sybils gain no rarity advantage over a single concentrated wallet.
 
-Recommendation 1+2 closes the practical risk without significant code or UX cost.
+The remaining residual risk is throwaway-wallet farming at a small economic premium. Acceptable given the cost asymmetry. No additional mitigation required for launch.
 
 #### Tests Required
 
-- `test_SybilWalletsCappedByGlyphLimit` — 5 sybils each capped at N glyphs
-- `test_NewWalletStartsAtBracket0` (assuming H-01 Option 2 chosen)
+- `test_NewWalletStartsAtCumulativeZero` — confirm per-wallet `contributions[epochId][wallet]` is independent
+- Integration: 10 sybils × 100 RITUAL each vs 1 wallet × 1000 RITUAL — confirm same total glyph supply but sybils pay more gas
 
 ---
 
@@ -827,22 +827,23 @@ function getCurrentPhase() external view returns (EpochPhase) {
 
 ## 11. Remediation Roadmap
 
-### Phase 1 — Launch-Blocking Fixes (1–2 days)
+### Phase 1 — Launch-Blocking Architecture Change (2–3 days)
+
+The C-01 / H-01 / H-04 fix is a single coordinated change: the **batched-claim redesign with cumulative qualification threshold**. See C-01 "Recommendation — Chosen Design" for full spec.
 
 | ID | Fix | Files Touched |
 |---|---|---|
-| C-01 | Raise `MIN_SACRIFICE` to `100e18` + add `MAX_GLYPHS_PER_WALLET_PER_EPOCH` | `SummoningEngine.sol`, tests, frontend constants, PRD §5, ARCHITECTURE §3.3 |
-| C-02 | Add `if (tokensOut == 0) revert` in `MintingCurve.mint` | `MintingCurve.sol`, tests |
-| H-01 | Implement bracket-from-cumulative-contribution (Option 2) | `EldritchGlyphs.sol`, `SummoningEngine.sol`, interface, tests, PRD §5.1 |
+| C-01 + H-01 + H-04 | Decouple sacrifice from glyph minting. `commitRitual` burns tokens + accumulates contribution; no VRF. Add `claimGlyphs(epochId)` that issues one VRF request for `contributions[epochId][wallet] / GLYPH_UNIT` glyphs (capped at 50 per batch), with tier bracket from cumulative contribution. Add `lifetimeContribution[wallet]` to power the Initiate cult rank. `MIN_SACRIFICE` stays at 1e18, new `GLYPH_UNIT = 100e18`. Per-epoch reset is automatic (contributions mapping is keyed by epochId). | `SummoningEngine.sol` (new state, new claim function, no VRF in commitRitual), `EldritchGlyphs.sol` (`requestBatch` replaces `requestGlyph`, fulfill loop), interfaces, tests (new suite for batched claim + per-epoch reset + bracket-from-cumulative), frontend `SacrificePanel` (remove reveal expectation), new `ClaimGlyphsPanel`, pack-opening reveal animation, "Pending glyphs: N" indicator, cult rank reads `lifetimeContribution`, PRD §4.3 / §4.7 (new Initiate rank) / §5, ARCHITECTURE §3.3 / §3.5 / §5.2 |
+| C-02 | Add `if (tokensOut == 0) revert MintingCurve__InsufficientPayment` in `MintingCurve.mint` between fee calculation and slippage check | `MintingCurve.sol`, tests |
 
 ### Phase 2 — Pre-Launch Hardening (1 day)
 
 | ID | Fix |
 |---|---|
-| H-02 | Add `Pausable` to `MintingCurve.mint`, `SummoningEngine.commitRitual`, `SummoningEngine.claimReward` |
+| H-02 | Add `Pausable` to `MintingCurve.mint`, `SummoningEngine.commitRitual`, `SummoningEngine.claimGlyphs`, `SummoningEngine.claimReward` |
 | H-03 | Frontend `useMintingCurve.ts` computes `minTokens = quote * 99 / 100` |
 | H-05 | Add `MAX_SUPPLY` to `RitualToken` with mint-time check |
-| M-01 | Special-case `participantCount == 1` → return Harbinger |
+| M-01 | Special-case `participantCount == 1` in `_calculateTier` → return Harbinger |
 
 ### Phase 3 — Soft Hardening (defer if needed)
 
