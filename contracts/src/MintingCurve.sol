@@ -74,6 +74,9 @@ contract MintingCurve is Ownable, ReentrancyGuard {
 
         uint256 tokensOut = _calcTokensOut(netEth);
 
+        // C-02: revert if input is too small to produce any whole tokens.
+        // Without this, users send ETH and receive zero tokens; the dust accrues to the treasury.
+        if (tokensOut == 0) revert MintingCurve__InsufficientPayment();
         if (tokensOut < minTokens) revert MintingCurve__SlippageExceeded();
 
         ritualToken.mint(msg.sender, tokensOut);

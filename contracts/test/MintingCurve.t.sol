@@ -125,10 +125,45 @@ contract MintingCurveTest is Test {
         curve.mint{ value: 0 }(0);
     }
 
+    function test_Mint_RevertsOnZeroTokenOutput() public {
+        // C-02: At zero supply, msg.value = 1e13 (0.00001 ETH) yields netEth=0.88e13
+        // → discriminant rounds to floor sqrt = 2e8 → dWhole = 0. Must revert with
+        // InsufficientPayment so the user does not lose ETH to the treasury for zero tokens.
+        vm.prank(alice);
+        vm.expectRevert(MintingCurve.MintingCurve__InsufficientPayment.selector);
+        curve.mint{ value: 1e13 }(0);
+    }
+
+    function test_Mint_RevertsOnZeroTokenOutput_AtBoundary() public {
+        // 0.0001 ETH also produces 0 whole tokens at zero supply (see _calc derivation).
+        vm.prank(alice);
+        vm.expectRevert(MintingCurve.MintingCurve__InsufficientPayment.selector);
+        curve.mint{ value: 0.0001 ether }(0);
+    }
+
+    function test_Mint_SucceedsAtMinimumViableEth() public {
+        // Smallest ETH that produces ≥ 1 whole token at zero supply.
+        // 0.00012 ETH → netEth = 1.056e14, discriminant = 4e16 + 8.448e8 → sqrtDisc = 200000003
+        // → dWhole = 1. Confirms the boundary is correct.
+        vm.prank(alice);
+        curve.mint{ value: 0.00012 ether }(0);
+        assertEq(token.balanceOf(alice), 1e18);
+    }
+
+    function testFuzz_Mint_RevertsForDustInputs(uint256 ethIn) public {
+        // Any ETH input below 0.0001 ether produces 0 tokens at zero supply (and must revert).
+        ethIn = bound(ethIn, 1, 0.0001 ether);
+        vm.deal(alice, ethIn);
+        vm.prank(alice);
+        vm.expectRevert(MintingCurve.MintingCurve__InsufficientPayment.selector);
+        curve.mint{ value: ethIn }(0);
+    }
+
     function test_Mint_RevertsOnSlippage() public {
+        // Use 1 ETH so tokensOut > 0 (otherwise InsufficientPayment fires before slippage check).
         vm.prank(alice);
         vm.expectRevert(MintingCurve.MintingCurve__SlippageExceeded.selector);
-        curve.mint{ value: 0.0001 ether }(type(uint256).max);
+        curve.mint{ value: 1 ether }(type(uint256).max);
     }
 
     function test_Mint_SlippageExactBoundary() public {
@@ -344,7 +379,9 @@ contract MintingCurveTest is Test {
     }
 
     function testFuzz_ContractBalanceEqualsEthIn(uint256 ethIn) public {
-        ethIn = bound(ethIn, 1, 50 ether);
+        // Lower bound at the smallest viable mint after C-02 (0.0001 ether produces 0 tokens
+        // at zero supply, so we use 0.001 ether to stay safely above the threshold).
+        ethIn = bound(ethIn, 0.001 ether, 50 ether);
         vm.deal(alice, ethIn);
         vm.prank(alice);
         curve.mint{ value: ethIn }(0);
