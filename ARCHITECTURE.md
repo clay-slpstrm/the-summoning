@@ -324,96 +324,124 @@ contract MintingCurve is Ownable, ReentrancyGuard {
 
 ### 3.3 SummoningEngine.sol
 
-Core gameplay contract. Manages epoch lifecycle, burns tokens, triggers VRF glyph minting,
-and supports Chainlink Automation for auto-resolution.
+Core gameplay contract. Manages epoch lifecycle, burns tokens, accumulates contribution +
+lifetime totals, batched-claims glyphs after resolution, distributes artifact rewards, and
+supports Chainlink Automation for auto-resolution.
 
-**Inherits**: `Ownable`, `ReentrancyGuard`, `AutomationCompatibleInterface`
+**Inherits**: `Ownable`, `ReentrancyGuard`, `Pausable`, `AutomationCompatibleInterface`
 
-**Key changes from original spec**:
-- Constructor takes 4 params: `(token, artifacts, glyphs, owner)` — `glyphs` is the `IEldritchGlyphs` reference
-- `commitRitual()` wraps `glyphs.requestGlyph()` in try/catch so VRF outage doesn't halt sacrifices — emits `GlyphRequestFailed` on failure
-- Implements `checkUpkeep()` / `performUpkeep()` for Chainlink Automation auto-resolution
-- 71 tests (58 original + 13 Automation)
+**Post-audit (C-01) architecture**:
+- `commitRitual` is a pure burn — NO VRF request, NO glyph mint at sacrifice time.
+- New `claimGlyphs(epochId)` issues a single batched VRF request after resolution.
+- `lifetimeContribution[wallet]` powers the Initiate cult rank.
+- `rewardClaimed[epochId][wallet]` replaces the old "zero-out contribution on claim" pattern so `claimGlyphs` can still read the original contribution.
+- `glyphsClaimedCount[epochId][wallet]` tracks the running total claimed across multiple `claimGlyphs` calls (whales > 50 earned).
+- Pausable (H-02) — owner can pause `commitRitual`, `claimGlyphs`, and `claimReward`. `resolveEpoch` stays live so epochs settle even when paused.
+- Sole-summoner Harbinger fix (M-01) in `_calculateTier`.
 
 ```solidity
-contract SummoningEngine is Ownable, ReentrancyGuard, AutomationCompatibleInterface {
+contract SummoningEngine is Ownable, ReentrancyGuard, Pausable, AutomationCompatibleInterface {
 
     IRitualToken public immutable ritualToken;
     IElderArtifacts public immutable artifacts;
-    IEldritchGlyphs public immutable glyphs;  // On-chain glyph NFT contract
+    IEldritchGlyphs public immutable glyphs;
 
-    // ... (epoch state unchanged from original spec) ...
+    // Constants
+    uint256 public constant MIN_SACRIFICE        = 1e18;      // 1 RITUAL — low-barrier entry
+    uint256 public constant GLYPH_UNIT           = 100e18;    // 100 RITUAL per glyph (qualification + divisor)
+    uint256 public constant MAX_GLYPHS_PER_CLAIM = 50;        // VRF callback gas cap
+    uint256 public constant SACRIFICE_COOLDOWN   = 30;
+    // ... GATHERING_DURATION, RITUAL_DURATION, FAILURE_REDUCTION_BPS, ESCALATION_BPS unchanged ...
+
+    // Epoch state
+    mapping(uint256 => mapping(address => uint256)) public contributions;          // epochId => wallet => burn
+    mapping(address => uint256)                     public lifetimeContribution;   // wallet => sum across all epochs
+    mapping(uint256 => mapping(address => bool))    public rewardClaimed;          // artifact double-claim guard
+    mapping(uint256 => mapping(address => uint256)) public glyphsClaimedCount;     // glyph batch progress
+
+    event GlyphsClaimRequested(
+        uint256 indexed epochId,
+        address indexed wallet,
+        uint256 numGlyphs,
+        uint256 cumulativeContribution
+    );
+    error SummoningEngine__NoGlyphsEarned();
 
     constructor(address _token, address _artifacts, address _glyphs, address _owner) Ownable(_owner) { ... }
 
-    event GlyphRequestFailed(uint256 indexed epochId, address indexed wallet, bytes reason);
+    function pause()   external onlyOwner { _pause(); }
+    function unpause() external onlyOwner { _unpause(); }
 
-    function commitRitual(uint256 amount) external nonReentrant {
-        // ... burns tokens, records contribution ...
-        emit RitualSacrifice(id, msg.sender, amount, epoch.totalCommitted);
-
-        // Non-blocking VRF request — sacrifice succeeds even if VRF is down.
-        // Amount is passed so the glyph contract can select the tier-weight bracket.
-        try glyphs.requestGlyph(msg.sender, id, amount) {} catch (bytes memory reason) {
-            emit GlyphRequestFailed(id, msg.sender, reason);
+    function commitRitual(uint256 amount) external nonReentrant whenNotPaused {
+        // ... phase/min/cooldown/balance checks ...
+        if (contributions[id][msg.sender] == 0) {
+            _contributors[id].push(msg.sender);
+            epoch.participantCount++;
         }
+        contributions[id][msg.sender] += amount;
+        epoch.totalCommitted          += amount;
+        lifetimeContribution[msg.sender] += amount;
+
+        ritualToken.burnFrom(msg.sender, amount);
+        emit RitualSacrifice(id, msg.sender, amount, epoch.totalCommitted);
+        // No VRF call here — glyphs are batched at claim time.
     }
 
-    // ── Chainlink Automation ──
-    function checkUpkeep(bytes calldata) external view returns (bool upkeepNeeded, bytes memory performData) {
-        // Returns true when active epoch past ritualEnd and not yet resolved
+    /// @notice Batched glyph claim after epoch resolution. One VRF request per call.
+    function claimGlyphs(uint256 epochId)
+        external nonReentrant whenNotPaused
+        returns (uint256 numClaimed)
+    {
+        if (!epochs[epochId].resolved) revert SummoningEngine__EpochNotResolved();
+
+        uint256 contribution   = contributions[epochId][msg.sender];
+        uint256 totalEarned    = contribution / GLYPH_UNIT;       // qualification + divisor
+        uint256 alreadyClaimed = glyphsClaimedCount[epochId][msg.sender];
+
+        if (totalEarned <= alreadyClaimed) revert SummoningEngine__NoGlyphsEarned();
+
+        uint256 remaining = totalEarned - alreadyClaimed;
+        numClaimed = remaining > MAX_GLYPHS_PER_CLAIM ? MAX_GLYPHS_PER_CLAIM : remaining;
+
+        // Effects before external call (CEI + reentrancy safety).
+        glyphsClaimedCount[epochId][msg.sender] = alreadyClaimed + numClaimed;
+
+        emit GlyphsClaimRequested(epochId, msg.sender, numClaimed, contribution);
+        glyphs.requestBatch(msg.sender, epochId, numClaimed, contribution);
+        // Revert propagates if VRF is unavailable — user retries.
     }
 
-    function performUpkeep(bytes calldata performData) external {
-        // Resolves the epoch (validates epochId, not resolved, past ritualEnd)
-    }
-
-    function resolveEpoch() external {
-        // Original permissionless resolution — still works alongside Automation
-        epoch.successful = epoch.totalCommitted >= epoch.threshold;
-
-        emit EpochResolved(id, epoch.successful, epoch.totalCommitted);
-    }
-
-    // ── Reward Claims ──
-
-    /// @notice Claim ERC-1155 reward artifact after epoch resolution.
-    ///         Contribution is zeroed on claim (prevents double-claim, CEI pattern).
-    function claimReward(uint256 epochId) external nonReentrant {
+    function claimReward(uint256 epochId) external nonReentrant whenNotPaused {
         Epoch storage epoch = epochs[epochId];
         if (!epoch.resolved) revert SummoningEngine__EpochNotResolved();
 
         uint256 contribution = contributions[epochId][msg.sender];
-        if (contribution == 0) revert SummoningEngine__AlreadyClaimed();
+        if (contribution == 0)                       revert SummoningEngine__AlreadyClaimed();
+        if (rewardClaimed[epochId][msg.sender])      revert SummoningEngine__AlreadyClaimed();
 
-        // Zero out before minting (checks-effects-interactions)
-        contributions[epochId][msg.sender] = 0;
+        rewardClaimed[epochId][msg.sender] = true;   // contribution stays for claimGlyphs
 
-        uint256 tierId = _calculateTier(epochId, contribution, epoch.successful);
+        uint256 tierId  = _calculateTier(epochId, contribution, epoch.successful);
         uint256 tokenId = epochId * 1000 + tierId;
         artifacts.mint(msg.sender, tokenId, 1, "");
-
         emit RewardClaimed(epochId, msg.sender, tierId);
     }
 
-    // ── Internal ──
+    // ── Chainlink Automation (unchanged from original spec) ──
 
     function _calculateTier(
         uint256 epochId,
         uint256 contribution,
         bool successful
     ) internal view returns (uint256) {
-        if (!successful) return 0; // Shattered Ritual
-
-        // NOTE: For production, percentile calculation requires sorted
-        // contributions or off-chain computation with merkle proof verification.
-        // Simplified version below uses average-multiple thresholds.
+        if (!successful) return 0;                                       // Shattered Ritual
         Epoch storage epoch = epochs[epochId];
-        uint256 avgContribution = epoch.totalCommitted / epoch.participantCount;
+        if (epoch.participantCount == 1) return 1;                       // M-01: sole summoner → Harbinger
 
-        if (contribution >= avgContribution * 10) return 1; // Harbinger (~top 1%)
-        if (contribution >= avgContribution * 3)  return 2; // Acolyte   (~top 10%)
-        return 3;                                           // Cultist   (everyone else)
+        uint256 avg = epoch.totalCommitted / epoch.participantCount;
+        if (contribution >= avg * 10) return 1;                          // Harbinger
+        if (contribution >= avg * 3)  return 2;                          // Acolyte
+        return 3;                                                        // Cultist
     }
 
     // ── View Functions ──
@@ -455,14 +483,15 @@ contract SummoningEngine is Ownable, ReentrancyGuard, AutomationCompatibleInterf
 ```
 
 **Key decisions**:
-- `commitRitual` burns tokens via `burnFrom` (requires user to `approve` SummoningEngine first).
-- `RitualSacrifice` event is the trigger for the Glyph Engine backend.
-- 30-second cooldown per wallet prevents glyph farming via rapid small burns.
-- Tier calculation is simplified for V1. Production should use merkle proofs from off-chain percentile calculation.
-- `resolveEpoch` is permissionless — anyone can call it after the ritual window closes. Chainlink Automation calls it automatically.
+- `commitRitual` burns tokens via `burnFrom` (requires user to `approve` SummoningEngine first) and issues NO VRF request — glyphs are claimed in batch after resolution (C-01).
+- `RitualSacrifice` event is the trigger for the Glyph Engine backend to refresh contribution leaderboards.
+- 30-second cooldown per wallet bounds spam, but is no longer the primary anti-sybil mechanism — that role is now played by the 100-RITUAL per-epoch glyph threshold (H-04).
+- `claimGlyphs` issues exactly one VRF request regardless of how many sacrifices the wallet made — splitting and concentrating produce identical glyph counts and identical odds (closes H-01).
+- Per-epoch reset is automatic: `contributions` is keyed by epochId, so 50 RITUAL in epoch 1 + 60 RITUAL in epoch 2 yields zero glyphs from either.
+- Tier calculation is simplified for V1, with the M-01 sole-summoner fix added. Production should use merkle proofs from off-chain percentile calculation.
+- `resolveEpoch` is permissionless and NOT pausable — epochs always settle so claims can flow.
 - All custom errors are prefixed with `SummoningEngine__` for clarity in multi-contract traces.
-- `startEpoch` guards against starting a new epoch before the prior one is resolved.
-- `claimReward` zeros contribution before minting (checks-effects-interactions) and uses `AlreadyClaimed` for zero-contribution rejections.
+- `claimReward` no longer zeros contribution (claimGlyphs needs it). Double-claim guarded by `rewardClaimed[epochId][wallet]` instead.
 - `getContributors(epochId)` returns the full contributor address list for off-chain use.
 - `nextThreshold()` surfaces the escalation/reduction math so the owner doesn't need to compute it manually.
 
@@ -566,36 +595,71 @@ contract ElderArtifacts is ERC1155, Ownable {
 
 ### 3.5 EldritchGlyphs.sol
 
-On-chain tradeable glyph NFTs. Each sacrifice mints a unique ERC-1155 glyph via Chainlink VRF.
+On-chain tradeable glyph NFTs. Glyphs are minted in batches after epoch resolution via a single Chainlink VRF request per claim.
 
 **Inherits**: `ERC1155`, `VRFConsumerBaseV2Plus`, `ERC2981`
 
 **Key design decisions**:
-- **Tradeable, not soulbound** — enables secondary market and late-joiner participation
-- **EIP-2981 royalties** — 5% on secondary sales to treasury
-- **VRF for fairness** — provably random tier assignment with sacrifice-amount-weighted brackets (see PRD §5.1 for the table)
-- **Tier weight bracketing** — `_bracket(amount)` selects one of 5 weight rows (1/10/100/1000/10000 RITUAL boundaries); larger sacrifices weight toward rarer tiers without locking small players out of any tier
-- **Amount stored with the request** — VRF callback is async, so `pendingGlyphs[requestId].amount` is captured at request time and read back in `fulfillRandomWords` to pick the bracket
-- **Double-fulfill guard** — `fulfillRandomWords` checks `pending.fulfilled` flag before minting, preventing duplicate glyphs from VRF coordinator bugs
-- **glyphCount tracking** — `_update()` override tracks per-wallet count on mint/transfer/burn, so cult rank reflects current ownership
-- **Separate from SummoningEngine** — clean separation of concerns; engine calls `requestGlyph()`, VRF callback mints
+- **Tradeable, not soulbound** — enables secondary market and late-joiner participation.
+- **EIP-2981 royalties** — 5% on secondary sales to treasury.
+- **Batched VRF** (C-01): `requestBatch(recipient, epochId, numGlyphs, cumulativeContribution)` issues ONE VRF request with `numWords = numGlyphs` (capped at `MAX_GLYPHS_PER_REQUEST = 50` for callback gas safety). All glyphs in a batch share the same tier bracket — derived from `cumulativeContribution`, not any single sacrifice amount.
+- **Single ERC-1155 `_mintBatch`** in the callback — one TransferBatch event, one storage update — keeps callback gas linear in `numGlyphs`. Per-glyph `GlyphMinted` events are emitted so backend indexing and per-glyph reveal animations still work.
+- **Tier weight bracketing** — `_bracket(cumulativeContribution)` selects one of 5 weight rows (10/100/1000/10000 RITUAL boundaries). Splitting and concentrating yield identical brackets (closes H-01 incentive inversion).
+- **PendingGlyph captured at request time** — VRF callback is async, so `pendingGlyphs[requestId]` records recipient, epochId, cumulativeContribution, and numGlyphs.
+- **Double-fulfill guard** — `fulfillRandomWords` checks `pending.fulfilled` flag before minting.
+- **glyphCount tracking** — `_update()` override tracks per-wallet count on mint/transfer/burn so cult rank reflects current ownership.
+- **Separate from SummoningEngine** — engine calls `requestBatch()` from `claimGlyphs`; VRF callback mints.
+- **InvalidBatchSize** error — defense-in-depth: rejects `numGlyphs == 0` or `> 50` even if the engine misbehaves.
 
 ```solidity
 contract EldritchGlyphs is ERC1155, VRFConsumerBaseV2Plus, ERC2981 {
-    function requestGlyph(address recipient, uint256 epochId, uint256 amount) external onlyEngine returns (uint256 requestId);
-    function fulfillRandomWords(uint256 requestId, uint256[] calldata randomWords) internal override {
-        // Reads pending.amount → _bracket(amount) → _tierWeights → cumulative roll
+    uint256 public constant MAX_GLYPHS_PER_REQUEST = 50;
+
+    struct PendingGlyph {
+        address recipient;
+        uint256 epochId;
+        uint256 cumulativeContribution; // selects tier bracket on fulfillment
+        uint256 numGlyphs;
+        bool    fulfilled;
     }
-    function _bracket(uint256 amount) internal pure returns (uint8);
+
+    event GlyphsBatchRequested(
+        uint256 indexed requestId,
+        address indexed recipient,
+        uint256 epochId,
+        uint256 numGlyphs,
+        uint256 cumulativeContribution
+    );
+    event GlyphMinted(uint256 indexed tokenId, address indexed recipient, uint8 tier, uint8 runeIndex, uint8 loreIndex, uint256 epochId);
+    event GlyphsBatchMinted(uint256 indexed requestId, address indexed recipient, uint256 epochId, uint256 numGlyphs);
+
+    function requestBatch(
+        address recipient,
+        uint256 epochId,
+        uint256 numGlyphs,
+        uint256 cumulativeContribution
+    ) external onlyEngine returns (uint256 requestId);
+
+    function fulfillRandomWords(uint256 requestId, uint256[] calldata randomWords) internal override {
+        // 1. Mark fulfilled.
+        // 2. bracket = _bracket(pending.cumulativeContribution); apply to every word.
+        // 3. For each word: derive tier/rune/lore, allocate tokenId, store GlyphData, emit GlyphMinted.
+        // 4. _mintBatch(recipient, ids, values, "")
+        // 5. emit GlyphsBatchMinted
+    }
+
+    function _bracket(uint256 cumulativeContribution) internal pure returns (uint8);
     function _tierWeights(uint8 bracket) internal pure returns (uint16[5] memory);
-    function _deriveTier(uint64 bits, uint256 amount) internal pure returns (uint8);
+    function _deriveTierFromBracket(uint64 bits, uint8 bracket) internal pure returns (uint8);
     function getGlyphData(uint256 tokenId) external view returns (GlyphData memory);
     function glyphCount(address wallet) external view returns (uint256);
     function totalMinted() external view returns (uint256);
 }
 ```
 
-**37 tests** covering: VRF fulfillment, double-fulfill revert, tier derivation boundaries, per-bracket fuzz distributions (1,000 samples × 5 brackets, ±5% tolerance), royalty info, glyphCount tracking on transfers, supportsInterface (ERC1155 + ERC2981).
+**Note on `callbackGasLimit`**: the constructor takes it as immutable. For a 50-glyph batch the callback runs ~50 × storage writes + one `_mintBatch` — set the limit at deploy to ~2.5M on mainnet (the Sepolia test rig uses 2.5M). Estimate via `forge test --gas-report` against `test_Fulfill_MintsBatch_FiveGlyphs` scaled up.
+
+**Tests** cover: batched VRF fulfillment (single + multi-glyph), double-fulfill revert, `InvalidBatchSize` boundaries (0 and 51), tier derivation boundaries, bracket-from-cumulative enforcement, per-bracket fuzz distributions (1,000 samples × 5 brackets), royalty info, glyphCount tracking on transfers, supportsInterface (ERC1155 + ERC2981).
 
 ### 3.6 Contract Deployment Order
 
@@ -612,7 +676,10 @@ Deployment must follow this exact sequence:
 8. Call EldritchGlyphs.setEngine(summoningEngineAddress)
 9. Add EldritchGlyphs as VRF consumer on Chainlink subscription
 10. Register SummoningEngine as Chainlink Automation upkeep (for auto-resolution)
-11. Users must call RitualToken.approve(summoningEngineAddress, MAX_UINT) before committing
+11. Users must call RitualToken.approve(summoningEngineAddress, MAX_UINT) before committing.
+    Note: glyphs are now claimed AFTER epoch resolution via `claimGlyphs(epochId)` — no
+    VRF cost is incurred at sacrifice time. Each `claimGlyphs` call issues one VRF
+    request returning up to 50 random words. Whales with >50 earned glyphs call again.
 ```
 
 ---
@@ -1027,32 +1094,46 @@ export async function updateCultRank(wallet: string) {
 - Animated: rotating rune circles (CSS `animateTransform`), pulsing glow, tentacle emergence
 - Portal shakes on sacrifice (CSS keyframe, triggered by state)
 
-#### GlyphReveal.tsx
-- Full-screen overlay (fixed positioning, backdrop blur)
-- 4-phase animation sequence controlled by `setTimeout` chain with **rarity-scaled timing**:
+#### GlyphReveal.tsx (booster-pack flow)
+- Full-screen overlay (fixed positioning, backdrop blur). Reads `glyphStore.revealQueue` and animates `revealQueue[0]`.
+- **Batch indicator** when the queue's max observed size > 1: a "Glyph X of N" pill at top center, where X = `batchTotal - revealQueue.length + 1`. `batchTotal` is captured as a high-watermark via `setBatchTotal((prev) => Math.max(prev, revealQueue.length))` and resets when the queue hits empty.
+- **Stacked-card depth**: when `phase >= 2` and `remaining > 0`, render 1–2 faded card silhouettes behind the active card (`scale: 0.95 - depth*0.03`, `translateY: depth*10`, `opacity: 0.35 - depth*0.12`).
+- 4-phase animation per glyph, rarity-scaled timing (unchanged from pre-audit spec):
   - Phase 0 (0ms): Modal appears, scale(0.5), opacity 0
   - Phase 1 (100ms): Scale to 1, opacity 1 — spinning channeling symbol (faster + tier-colored for rare+)
-  - Phase 2 (variable): Glyph materializes — rune + color reveal tier. ~1000ms common, ~1720ms Tremor, ~2200ms Rupture/Breach
-  - Phase 3 (variable): Tier name, lore text, "tap to continue" fade in. ~2000ms common, ~3440ms Tremor, ~4400ms Rupture/Breach
-- `suspenseMultiplier`: 1.0x for common, 2.2x for Tremor, 3.0x for Rupture/Breach
-- Framer Motion `AnimatePresence` for enter/exit
-- Tier-specific effects: Tremor+ get expanded glow radius, faster spinner with tier glow. Rupture/Breach get screen shake
+  - Phase 2 (variable): Glyph materializes. ~1000ms common, ~1720ms Tremor, ~2200ms Rupture/Breach
+  - Phase 3 (variable): Tier name, lore, footer text fade in. ~2000ms common, ~3440ms Tremor, ~4400ms Rupture/Breach
+- `suspenseMultiplier`: 1.0x common, 2.2x Tremor, 3.0x Rupture/Breach.
+- Footer reads "TAP FOR NEXT" while `remaining > 0`, otherwise "TAP TO CONTINUE". Tap → `addGlyph` + `dequeueReveal`.
+- Tier-specific effects: Tremor+ get expanded glow radius, faster spinner with tier glow. Rupture/Breach add screen shake.
 
 #### SacrificePanel.tsx
-- Amount input field with quick-select buttons: 100, 500, 1000 $RITUAL (uses `btn-quick-active`/`btn-quick-inactive` classes)
-- Checks allowance → prompts `approve()` if needed → calls `commitRitual(amount)`
-- Button states: "APPROVE & SACRIFICE" / "CONFIRM IN WALLET..." / "SACRIFICING..." / "SACRIFICE ACCEPTED" / "WAIT Xs" (cooldown)
-- Reads `lastSacrificeTime(wallet)` from SummoningEngine to preempt the on-chain `SACRIFICE_COOLDOWN` (30s). When the wallet is inside the cooldown window, the button is disabled and shows a live countdown derived from a 1s-tick `setInterval`. Prevents users from signing a tx that will revert.
-- Only visible during Ritual phase. `page.tsx` switches the slot by phase: Gathering → "Sacrifice opens soon" guidance; Resolved-but-not-yet-on-chain-resolved → "Awaiting Resolution" pending card; Resolved (on-chain) → `ClaimArtifact`.
-- After success, shows a glowing container: "The void accepts your offering" + "VRF requested — channeling your glyph..." while ChannelingOverlay activates
+- Amount input field with quick-select buttons: 100, 500, 1000 $RITUAL (uses `btn-quick-active`/`btn-quick-inactive` classes).
+- Checks allowance → prompts `approve()` if needed → calls `commitRitual(amount)`.
+- Button states: "APPROVE & SACRIFICE" / "CONFIRM IN WALLET..." / "SACRIFICING..." / "SACRIFICE ACCEPTED" / "WAIT Xs" (cooldown).
+- Reads `lastSacrificeTime(wallet)` from SummoningEngine to preempt the on-chain `SACRIFICE_COOLDOWN` (30s). 1s-tick `setInterval` drives the countdown.
+- Only visible during Ritual phase. `page.tsx` switches the slot by phase: Gathering → "Sacrifice opens soon" guidance; Resolved-but-not-yet-on-chain-resolved → "Awaiting Resolution" pending card; Resolved (on-chain) → `ClaimArtifact` + `ClaimGlyphsPanel` rendered together.
+- **No post-sacrifice channeling/reveal expectation** (C-01). Success state reads "The void accepts your offering" + "Glyphs claimable after the ritual resolves".
+- **Pending-glyphs indicator** (always visible during Ritual): reads `getContribution(epochId, wallet)` and shows "Pending glyphs: N", "Until next glyph: M $RITUAL", and a live delta preview based on the typed sacrifice amount.
 
-#### ClaimArtifact.tsx
-- Renders only when **`epoch.resolved === true`** on-chain (not the time-derived `phase` — those diverge when `resolveEpoch()` hasn't fired yet) **and** the connected wallet has a non-zero `getContribution(epochId, wallet)` from SummoningEngine. Gating on `phase === "Resolved"` would cause claim attempts during the pending window to revert with `EpochNotResolved`.
-- Mirrors the contract's `_calculateTier` formula client-side to predict the tier the user will receive: `avg = totalCommitted / participantCount`; `contribution >= avg * 10` → Harbinger (1), `>= avg * 3` → Acolyte (2), else Cultist (3); failed epochs always → Shattered Ritual (0).
-- Calls `useClaimReward(epochId)` from `useSummoning.ts`. Progresses through "Confirm in wallet..." → "Claiming..." → success state.
-- Success state is sticky for the session: shows tier name, flavor copy, ERC-1155 token ID (`epochId * 1000 + tierId`). On reload, the on-chain contribution reads as 0 (zeroed by the contract on claim) and the card hides naturally.
-- Tier coloring: Shattered #6B7280, Harbinger #F59E0B, Acolyte #A855F7, Cultist #4A9EFF — matched to in-game palette. Card border, glow, and CTA gradient all derive from tier color.
-- Mounted in `page.tsx` in the same column slot as `SacrificePanel`, switched by `epoch.phase`.
+#### ClaimGlyphsPanel.tsx (new — C-01 batched claim)
+- Renders only when **`epoch.resolved === true`** AND `getContribution(epochId, wallet) > 0`. Mounted alongside `ClaimArtifact` in the Resolved-phase slot.
+- Reads `contributions[epochId][wallet]` and `glyphsClaimedCount[epochId][wallet]` from SummoningEngine. Computes:
+  - `totalEarned = contribution / 100e18` (integer division — GLYPH_UNIT)
+  - `remaining = totalEarned - claimedCount`
+  - `claimableNow = min(remaining, MAX_GLYPHS_PER_CLAIM=50)`
+  - `remainingAfter = max(remaining - 50, 0)`
+- Three states:
+  - `0 < contribution < 100 RITUAL` → "No glyphs earned" hint; shows shortfall and the Initiate-rank note.
+  - `remaining > 0` → "Claim N Glyph[s]" button. Calls `useClaimGlyphs()` from `useSummoning.ts`. Shows the "X after" tail and the "Capped at 50 per claim — call again for the rest." footer when relevant.
+  - `remaining == 0` → sticky "Glyphs Claimed" done state.
+- On success: refetch `getContribution` + `glyphsClaimedCount` so the UI advances. The actual glyph data arrives via VRF callback → backend `glyph_reveal` WS pushes → `enqueueReveal` into `glyphStore.revealQueue` → `GlyphReveal` animates the batch booster-pack-style.
+
+#### ClaimArtifact.tsx (updated)
+- Renders only when **`epoch.resolved === true`** AND `getContribution(epochId, wallet) > 0` AND `rewardClaimed[epochId][wallet] === false`. Reward double-claim is now gated by the new `rewardClaimed` mapping; contribution is preserved on-chain so `ClaimGlyphsPanel` can still read it.
+- Mirrors the contract's `_calculateTier` formula client-side. **M-01 sole-summoner Harbinger fix**: when `participantCount == 1`, tier is Harbinger (1) regardless of the avg-multiple thresholds.
+- Calls `useClaimReward(epochId)` from `useSummoning.ts`. "Confirm in wallet..." → "Claiming..." → sticky success state (token ID `epochId * 1000 + tierId`).
+- Tier coloring unchanged: Shattered #6B7280, Harbinger #F59E0B, Acolyte #A855F7, Cultist #4A9EFF.
 
 #### GlyphCollection.tsx
 - CSS Grid: `repeat(auto-fill, minmax(44px, 1fr))`
@@ -1118,11 +1199,18 @@ export async function updateCultRank(wallet: string) {
 ```
 1. User clicks "Connect Wallet"
 2. wagmi connector modal (MetaMask, WalletConnect, Coinbase)
-3. On connect: read $RITUAL balance, read current epoch, check approval
+3. On connect: read $RITUAL balance, current epoch, approval, contribution, lifetimeContribution
 4. If no approval for SummoningEngine: show "Approve $RITUAL" button first
 5. On approval: enable sacrifice interface
-6. On sacrifice tx submitted: show "Channeling..." state
-7. On tx confirmed: WebSocket delivers glyph → trigger GlyphReveal overlay
+6. During Ritual phase:
+   a. User submits commitRitual(amount) — pure burn, no VRF
+   b. On tx confirmed: pending-glyphs indicator updates from refetched contribution
+7. After resolveEpoch (or Chainlink Automation upkeep):
+   a. ClaimArtifact + ClaimGlyphsPanel both render
+   b. User submits claimGlyphs(epochId) — one VRF request for up to 50 random words
+   c. VRF callback → GlyphMinted events → backend pushes glyph_reveal WS messages
+   d. Frontend enqueues each glyph onto revealQueue → booster-pack reveal animates
+   e. Whales with >50 earned call claimGlyphs again for the next batch
 ```
 
 **RainbowKit theming (`WalletProvider.tsx`)**: The default RainbowKit chrome is overridden with a custom theme matching The Summoning palette. Built on `darkTheme()` with `accentColor: #7c3aed`, `fontStack: "system"`, and the full color object overridden — modal background `#0d0d15`, modal border `#1e1e2e`, modal text `#e2e8f0`, profile action hover `#2d1b4e` (ritual-dark), connection indicator `#7c3aed`. Modal font is set to Crimson Text for visual continuity with the app.

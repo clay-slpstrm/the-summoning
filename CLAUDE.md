@@ -139,7 +139,8 @@ GLYPH_TIERS:
   Breach   —  1% chance — #EF4444
 
 CULT_RANKS:
-  Uninitiated         —  0 glyphs
+  Uninitiated         —  0 glyphs, 0 lifetime
+  Initiate            —  0 glyphs, lifetimeContribution > 0 (#94A3B8)
   Whisperer           —  3 glyphs
   Echo Walker         —  8 glyphs
   Void Touched        — 15 glyphs
@@ -147,13 +148,16 @@ CULT_RANKS:
   Herald of the Breach — 40 glyphs
 
 CONTRACT_PARAMS:
-  BASE_PRICE          — 0.0001 ETH
-  SCALE_FACTOR        — 100,000,000
-  PROTOCOL_FEE        — 12% (1200 BPS)
-  GATHERING_DURATION  — 48 hours
-  RITUAL_DURATION     — 24 hours
-  MIN_SACRIFICE       — 1 $RITUAL (tier weights scale with amount via brackets — see PRD §5.1)
-  SACRIFICE_COOLDOWN  — 30 seconds
+  BASE_PRICE             — 0.0001 ETH
+  SCALE_FACTOR           — 100,000,000
+  PROTOCOL_FEE           — 12% (1200 BPS)
+  GATHERING_DURATION     — 48 hours
+  RITUAL_DURATION        — 24 hours
+  MIN_SACRIFICE          — 1 $RITUAL (low-barrier participation)
+  GLYPH_UNIT             — 100 $RITUAL (qualification threshold + count divisor)
+  MAX_GLYPHS_PER_CLAIM   — 50 (VRF callback gas cap; whales claim in batches)
+  SACRIFICE_COOLDOWN     — 30 seconds
+  RITUAL_TOKEN_MAX_SUPPLY — 1,000,000,000 $RITUAL (1B hard cap, H-05)
 
 ERC-1155 TOKEN IDS:
   Format: epochId * 1000 + tierId
@@ -185,21 +189,31 @@ Buttons: bg gradient(135deg, #4c1d95, #7c3aed), uppercase, tracking-widest, seri
 
 ## Critical Implementation Notes
 
-1. **Glyphs are on-chain ERC-1155 NFTs** minted by the EldritchGlyphs contract via **Chainlink VRF**. Tier, rune, and lore are provably fair random assignments. The backend is an event indexer — it does NOT assign glyphs. The old `keccak256(txHash)` system has been replaced.
+1. **Glyphs are on-chain ERC-1155 NFTs** minted by the EldritchGlyphs contract via **Chainlink VRF**. Tier, rune, and lore are provably fair random assignments. The backend is an event indexer — it does NOT assign glyphs.
 
-2. **VRF resilience**: `commitRitual()` wraps `glyphs.requestGlyph()` in a try/catch. If VRF is down (e.g., LINK depleted), the sacrifice still succeeds (tokens burned, contribution recorded) but no glyph is minted. A `GlyphRequestFailed` event is emitted for the backend to detect.
+2. **Sacrifice does NOT mint glyphs** (post-audit, C-01). `commitRitual()` is a pure burn: it destroys $RITUAL, updates `contributions[epochId][wallet]` and `lifetimeContribution[wallet]`, and issues no VRF request. Glyphs are claimed in a batch after the epoch resolves via `claimGlyphs(epochId)`, which issues ONE VRF request returning `contributions[epochId][wallet] / GLYPH_UNIT` random words (capped at MAX_GLYPHS_PER_CLAIM=50). Below 100 RITUAL of cumulative epoch contribution → zero glyphs (Initiate rank only). Per-epoch reset is automatic (contributions are keyed by epochId; never carry over).
 
-3. **MintingCurve uses integral pricing**: `mint()` solves the quadratic formula over the price curve integral, not a spot price. This prevents large mints from underpaying. `getEstimatedCost()` uses a trapezoidal approximation for frontend previews. All ETH in the contract (12% fee + 88% treasury) is withdrawable by the owner (multisig) via `withdraw()`. There is no sell-back mechanism.
+3. **Bracket is selected by cumulative epoch contribution, not per-sacrifice amount.** Splitting and concentrating produce identical glyph counts and identical odds — the H-01 incentive inversion is eliminated.
 
-4. **The glyph reveal animation is the most important UX element**. The VRF wait (~30-60s) is covered by the ChannelingOverlay. The GlyphReveal animation fires on the `glyph_reveal` WebSocket message. Target: ~2.5s for Whisper/Echo, ~4s for Tremor+. See PRD.md Section 4.4 for full timing spec.
+4. **VRF resilience**: `claimGlyphs()` calls `glyphs.requestBatch()` directly (no try/catch). If VRF is unavailable, the claim transaction reverts cleanly and the user can retry later. State is unaffected. Sacrifices remain fully functional during VRF outages because they never call VRF.
 
-5. **Users must approve() the SummoningEngine before their first sacrifice**. The SacrificePanel handles this — checks allowance, prompts approval if needed, then proceeds to sacrifice.
+5. **MintingCurve uses integral pricing**: `mint()` solves the quadratic formula over the price curve integral, not a spot price. This prevents large mints from underpaying. The frontend reads `getTokensOut(ethIn)` (mirrors the integral exactly) for slippage-protected mints — `minTokens = quote * 99 / 100` (1% tolerance, H-03). `getEstimatedCost()` is a trapezoidal approximation for previews. All ETH in the contract is withdrawable by the owner (multisig) via `withdraw()`. There is no sell-back mechanism.
 
-6. **WebSocket reconnection**: If WS disconnects, query `/api/glyphs/:wallet` and `/api/glyphs/:wallet/pending` on reconnect to catch missed glyphs and restore channeling state.
+6. **Pausable** (H-02): owner can pause `MintingCurve.mint`, `SummoningEngine.commitRitual`, `claimGlyphs`, and `claimReward` during an incident. `resolveEpoch` and `withdraw` stay live so epochs can still settle and treasury remains recoverable.
 
-7. **Portal state is shared**: All users see the same portal progression. It's derived from `totalCommitted / threshold` for the current epoch.
+7. **RitualToken.MAX_SUPPLY = 1B tokens** (H-05). `RitualToken.mint` reverts above the cap.
 
-8. **Gas costs are near zero**: At 0.03 gwei, a sacrifice costs ~$0.006. Don't show gas warnings unless price spikes above 5 gwei.
+8. **The glyph reveal animation is the most important UX element**. After `claimGlyphs` confirms and the batched `GlyphMinted` events arrive, the GlyphReveal queues all N glyphs and reveals them sequentially in a booster-pack flow (X-of-N pill, faded stacked cards behind). Per-glyph timing: ~2.5s for Whisper/Echo, ~4s for Tremor+. See PRD.md §4.4.
+
+9. **Users must approve() the SummoningEngine before their first sacrifice**. The SacrificePanel handles this — checks allowance, prompts approval if needed, then proceeds to sacrifice.
+
+10. **WebSocket reconnection**: If WS disconnects, query `/api/glyphs/:wallet` and `/api/glyphs/:wallet/pending` on reconnect to catch missed glyphs.
+
+11. **Portal state is shared**: All users see the same portal progression. It's derived from `totalCommitted / threshold` for the current epoch.
+
+12. **Gas costs are near zero**: At 0.03 gwei, a sacrifice costs ~$0.006. Don't show gas warnings unless price spikes above 5 gwei.
+
+13. **Sole-contributor Harbinger** (M-01): `_calculateTier` special-cases `participantCount == 1` to return Harbinger (tier 1). Without this, the avg-multiple thresholds are unreachable for a sole summoner.
 
 ## Testing Requirements
 

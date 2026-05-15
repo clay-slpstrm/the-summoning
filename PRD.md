@@ -187,9 +187,9 @@ Player wants another pull → Repeat
 
 ### 4.3 F3: Sacrifice Interface
 
-**Description**: Users commit $RITUAL tokens to the current epoch's summoning ritual. Each sacrifice triggers a glyph reveal.
+**Description**: Users commit $RITUAL tokens to the current epoch's summoning ritual. Sacrifices are pure burns — they accumulate epoch contribution and lifetime contribution, but mint no glyphs at this stage. Glyphs are claimed in a batch after the epoch resolves via the ClaimGlyphsPanel (F9.5).
 
-**User Story**: As a user, I want to sacrifice my $RITUAL tokens to help summon the Old One and receive an Eldritch Glyph.
+**User Story**: As a user, I want to burn $RITUAL to support the collective summoning and track how many glyphs I will be able to claim once the ritual resolves.
 
 **Acceptance Criteria**:
 - Amount input field + quick-select buttons (100, 500, 1000 $RITUAL)
@@ -203,14 +203,16 @@ Player wants another pull → Repeat
   - **Success**: "SACRIFICE ACCEPTED" briefly, then resets
   - **Cooldown**: Dimmed/disabled, button reads "WAIT Xs" with live countdown until 30s elapses since the wallet's last sacrifice. UI preempts the on-chain revert by reading `lastSacrificeTime(wallet)`.
   - **Disabled**: Gray, insufficient balance or wrong epoch phase
-- After sacrifice tx confirms: "VRF requested — channeling your glyph..." text appears
-- Full-screen ChannelingOverlay activates during Chainlink VRF wait (~30-60s)
-- VRF callback triggers GlyphReveal overlay via WebSocket `glyph_reveal`
+- **Pending-glyphs indicator** (always visible during Ritual phase): reads `getContribution(epochId, wallet)` and displays:
+  - "Pending glyphs: N" — `contribution / 100` (integer division)
+  - "Until next glyph: M $RITUAL" — RITUAL still needed to push the wallet over the next 100-unit threshold
+  - Live delta preview as the user types: "After this sacrifice: P glyphs · Q to next"
+- After sacrifice tx confirms: "Glyphs claimable after the ritual resolves" — no VRF wait, no channeling overlay
 - Cooldown: 30 seconds between sacrifices (enforced on-chain via `SACRIFICE_COOLDOWN`, preempted in UI to avoid wasted wallet prompts)
 - Only visible during Ritual phase (hidden otherwise)
-- Error states: insufficient balance, cooldown active, epoch not in Ritual phase, user rejected tx
+- Error states: insufficient balance, cooldown active, epoch not in Ritual phase, user rejected tx, MintingCurve/SummoningEngine paused (H-02)
 
-**Critical UX Requirement**: The time between clicking "Sacrifice" and seeing the glyph reveal includes a ~30-60 second Chainlink VRF wait. The ChannelingOverlay fills this gap with rotating lore text and atmospheric animations, making the wait feel like the void is deciding the user's fate rather than idle loading.
+**Critical UX Requirement**: Because glyphs no longer mint at sacrifice time, the Pending-glyphs indicator is the user's primary feedback during the Ritual window. It must update immediately after a confirmed sacrifice (refetched from `getContribution`) so the user sees their progression and can target the next 100-RITUAL threshold.
 
 **Priority**: P0 — Launch
 
@@ -218,28 +220,31 @@ Player wants another pull → Repeat
 
 ### 4.4 F4: Glyph Reveal Animation
 
-**Description**: Full-screen animated reveal when a user receives a new Eldritch Glyph after sacrifice. This is the gacha "pull" moment.
+**Description**: Full-screen animated reveal of glyphs minted by `claimGlyphs(epochId)`. Because claims are batched (up to 50 glyphs from one VRF request), this is a **booster-pack flow** — N glyphs queued, revealed sequentially, each tap advancing to the next.
 
-**User Story**: As a user, I want a dramatic reveal experience when I sacrifice so I feel excited about what I got and want to do it again.
+**User Story**: As a user, I want a dramatic, sequenced reveal experience when I claim my earned glyphs so opening a batch feels like ripping a pack rather than a flat list update.
 
 **Acceptance Criteria**:
-- Full-screen overlay with backdrop blur and dark background
-- 4-phase animation sequence with **rarity-scaled timing** (longer suspense for rarer tiers):
+- Source of truth: `glyphStore.revealQueue: GlyphData[]`. The frontend enqueues newly-minted glyphs (one per backend `glyph_reveal` WS message or on-chain `GlyphMinted` event subscription). The reveal component always animates `revealQueue[0]`.
+- Full-screen overlay with backdrop blur and dark background.
+- **Batch indicator** (only when `batchTotal > 1`): a pill at the top center reads "Glyph X of N", where X is `batchTotal - revealQueue.length + 1`. `batchTotal` is the max queue length observed since the queue last hit empty.
+- **Stacked-card depth**: when remaining glyphs > 0, render 1–2 faded card silhouettes behind the active reveal at slight downward offsets — visual cue that more pulls are queued.
+- 4-phase animation per glyph (timing is per-glyph, not per-batch):
   - **Phase 1 — Channeling (0→100ms)**: Card scales from 0.5 to 1.0, spinning channeling symbol (✦), dark background. Spinner is faster and tier-colored for rare+ tiers.
-  - **Phase 2 — Manifestation**: Spinning symbol replaced by glyph rune. Background transitions to tier-colored gradient. Glow effect scales based on tier rarity. Tier color immediately signals rarity. Timing: ~1000ms for common, ~1720ms for Tremor, ~2200ms for Rupture/Breach.
-  - **Phase 3 — Reveal**: Tier name fades in ("ECHO GLYPH"), lore text fades in. For Tremor+: "★ RARE ★" label. For Rupture+: "✦ LEGENDARY ✦" label. For Breach: screen shake effect + extended glow. Timing: ~2000ms for common, ~3440ms for Tremor, ~4400ms for Rupture/Breach.
-  - **Phase 4 — Dismiss**: "TAP TO CONTINUE" text appears. Click/tap anywhere dismisses overlay. Glyph animates to collection grid.
-- Total animation time: ~2s for common tiers (Whisper, Echo), ~3.4s for Tremor, ~4.4s for rare tiers (Rupture, Breach)
-- Tier-specific visual treatments:
+  - **Phase 2 — Manifestation**: Spinning symbol replaced by glyph rune. Background transitions to tier-colored gradient. Glow effect scales based on tier rarity. Timing: ~1000ms for common, ~1720ms for Tremor, ~2200ms for Rupture/Breach.
+  - **Phase 3 — Reveal**: Tier name fades in ("ECHO GLYPH"), lore text fades in. For Tremor+: "★ RARE ★" label. For Rupture+: "✦ LEGENDARY ✦" label. For Breach: screen shake + extended glow. Timing: ~2000ms for common, ~3440ms for Tremor, ~4400ms for Rupture/Breach.
+  - **Phase 4 — Dismiss**: Footer reads "TAP FOR NEXT" when the queue has more glyphs, "TAP TO CONTINUE" on the last. Click/tap dequeues and animates the next, or closes the overlay if empty.
+- Per-glyph total: ~2s common, ~3.4s Tremor, ~4.4s rare+.
+- Tier-specific visual treatments (unchanged):
   - **Whisper**: Gray glow, subtle, brief
   - **Echo**: Blue glow, moderate
   - **Tremor**: Purple glow, "RARE" label, expanded glow radius
   - **Rupture**: Gold glow, "LEGENDARY" badge, full-screen flash
   - **Breach**: Red glow, screen shake, ambient color shift, extended animation
-- Must not block the user from sacrificing again. Tapping dismiss should immediately return to sacrifice interface.
-- Animations should use Framer Motion for smooth 60fps performance
+- Each dequeued glyph is appended to `glyphStore.glyphs` so the collection grid stays consistent.
+- Animations use Framer Motion for smooth 60fps performance.
 
-**Design Principle**: The reveal must feel like a reward, not an interruption. Common tiers should be fast and satisfying. Rare tiers should be dramatic enough to screenshot. The user should NEVER feel like the animation is slowing them down.
+**Design Principle**: The booster-pack flow trades a single-reveal "ding" for a building rhythm — the user gets to anticipate each pull in a batch. Common pulls stay snappy; the rare-glyph drama is preserved. The "X of N" indicator gives clear progress so users know how far they have to go through a 20- or 50-card batch.
 
 **Priority**: P0 — Launch (this IS the product)
 
@@ -310,14 +315,19 @@ Player wants another pull → Repeat
 - Persists across sessions (backend-calculated, loaded on connect)
 
 **Rank Thresholds**:
-| Rank | Glyphs Required | Color |
-|------|----------------|-------|
-| Uninitiated | 0 | #6B7280 |
-| Whisperer | 3 | #8B8B8B |
-| Echo Walker | 8 | #4A9EFF |
-| Void Touched | 15 | #A855F7 |
-| Rift Keeper | 25 | #F59E0B |
-| Herald of the Breach | 40 | #EF4444 |
+| Rank | Condition | Color |
+|------|-----------|-------|
+| Uninitiated | 0 glyphs AND 0 lifetime contribution | #6B7280 |
+| Initiate | 0 glyphs AND `lifetimeContribution(wallet) > 0` | #94A3B8 |
+| Whisperer | ≥ 3 glyphs | #8B8B8B |
+| Echo Walker | ≥ 8 glyphs | #4A9EFF |
+| Void Touched | ≥ 15 glyphs | #A855F7 |
+| Rift Keeper | ≥ 25 glyphs | #F59E0B |
+| Herald of the Breach | ≥ 40 glyphs | #EF4444 |
+
+**Rank resolution** (see `useCultRank`): if `glyphCount > 0`, the wallet is placed on the glyph-tier ladder (Initiate is skipped for the progression bar — it is a lateral state for non-glyph holders). If `glyphCount == 0` but `lifetimeContribution > 0`, the wallet is **Initiate**: the wallet has burned RITUAL but never crossed the 100-RITUAL glyph-qualification threshold in any single epoch. Otherwise **Uninitiated**.
+
+Initiate exists because the C-01 redesign sets the glyph qualification threshold at 100 RITUAL of cumulative-per-epoch contribution. Below that, the wallet still contributes meaningfully to the collective summoning but earns no NFT — the Initiate rank acknowledges that participation without diluting glyph status.
 
 **Priority**: P0 — Launch
 
@@ -348,16 +358,41 @@ Player wants another pull → Repeat
 **User Story**: As a user who contributed to a resolved epoch, I want to claim my artifact directly from the main page without navigating elsewhere or guessing my tier.
 
 **Acceptance Criteria**:
-- Card renders only when **`epoch.resolved === true`** on-chain (not just when phase reads as Resolved — those can diverge if `resolveEpoch()` hasn't been called yet) **and** the connected wallet has a non-zero `getContribution(epochId, wallet)`.
-- Replaces the SacrificePanel slot once the epoch is resolved on-chain. During the in-between "Pending Resolution" window (`phase==="Resolved" && !epoch.resolved`), an "Awaiting Resolution" placeholder card renders instead of the claim card.
-- Predicts tier client-side using the contract's `_calculateTier` formula (avg = totalCommitted / participantCount; ≥10× avg → Harbinger, ≥3× avg → Acolyte, else Cultist; failed epochs → Shattered). **Edge case**: a sole contributor's contribution always equals the avg, so the `≥10× avg` Harbinger threshold is unreachable solo — the lone summoner caps at Cultist (tier 3) on success. By design until tier formula is rebalanced.
+- Card renders only when **`epoch.resolved === true`** on-chain (not just when phase reads as Resolved — those can diverge if `resolveEpoch()` hasn't been called yet) **and** the connected wallet has a non-zero `getContribution(epochId, wallet)` AND `rewardClaimed[epochId][wallet] === false`.
+- Replaces the SacrificePanel slot once the epoch is resolved on-chain. During the in-between "Pending Resolution" window (`phase==="Resolved" && !epoch.resolved`), an "Awaiting Resolution" placeholder card renders instead. Once resolved, both this card and **F9.5 Claim Glyphs Panel** render together.
+- Predicts tier client-side using the contract's `_calculateTier` formula. **M-01**: a sole contributor is now special-cased to Harbinger (tier 1) — the avg-multiple thresholds are mathematically unreachable for `participantCount == 1` (contribution == avg, so the `≥10× avg` test always fails). Otherwise: avg = totalCommitted / participantCount; ≥10× avg → Harbinger, ≥3× avg → Acolyte, else Cultist. Failed epochs → Shattered.
 - Shows: predicted tier name (heading), tier flavor copy, the user's contribution amount, and the epoch outcome (✦ Summoned / ✕ Failed).
 - Button calls `claimReward(epochId)` and progresses through "Confirm in wallet..." → "Claiming..." → success state.
-- Success state is sticky for the session: shows tier name, flavor, and the artifact's ERC-1155 token ID (`epochId * 1000 + tierId`). After page reload, the contribution is zero on-chain and the card hides.
+- Success state is sticky for the session: shows tier name, flavor, and the artifact's ERC-1155 token ID (`epochId * 1000 + tierId`). The contract sets `rewardClaimed[epochId][wallet] = true` (it does NOT zero the contribution — F9.5 still needs to read it). Card hides after page reload because `rewardClaimed` returns `true`.
 - Tier coloring matches in-game palette: Shattered #6B7280, Harbinger #F59E0B, Acolyte #A855F7, Cultist #4A9EFF.
 - Empty state: nothing rendered. Users who didn't contribute see no claim card.
 
 **Priority**: P0 — Launch (closes the macro loop)
+
+---
+
+### 4.9.5 F9.5: Claim Glyphs Panel
+
+**Description**: Batched VRF claim for the glyph NFTs the wallet earned in a resolved epoch. Renders alongside F9 Claim Artifact during the Resolved phase. Each call to `claimGlyphs(epochId)` mints up to `MAX_GLYPHS_PER_CLAIM = 50` glyphs from a single VRF request; whales call again for the next batch.
+
+**User Story**: As a contributor in a resolved epoch, I want to claim my earned glyphs in one click and watch them open like a booster pack.
+
+**Acceptance Criteria**:
+- Renders only when **`epoch.resolved === true`** AND the wallet has `getContribution(epochId, wallet) > 0`.
+- Reads `contributions[epochId][wallet]` and `glyphsClaimedCount[epochId][wallet]`. Computes:
+  - `totalEarned = contribution / 100e18` (integer division — 100 RITUAL per glyph)
+  - `remaining = totalEarned - claimedCount`
+  - `claimableNow = min(remaining, 50)`
+  - `remainingAfter = max(remaining - 50, 0)`
+- **Three states**:
+  - `contribution > 0` but `contribution < 100 RITUAL` → "No glyphs earned" hint, showing shortfall ($X RITUAL short of qualifying) and a note that lifetime contribution still earns the Initiate cult rank.
+  - `remaining > 0` → primary state. Shows contribution, total earned, already claimed (if > 0), and "Claim now: N (M after)". Button text: `Claim N Glyph[s]`. When `remaining > 50`, a footer reads "Capped at 50 per claim — call again for the rest."
+  - `remaining == 0` → "Glyphs Claimed" done state with the total count, sticky for the session.
+- Button calls `claimGlyphs(epochId)` → "Confirm in wallet…" → "Channeling…" → on success: refetch contribution + claimedCount; the queued `GlyphMinted` events fan the freshly-minted glyphs into the F4 booster-pack reveal.
+- Tier coloring: panel border #7c3aed for the active state, #94A3B8 for the below-threshold hint.
+- Disabled while `claimGlyphs` is paused (H-02) or the VRF subscription is depleted (the tx will revert; show the wallet error to the user).
+
+**Priority**: P0 — Launch (the other half of the F9 claim flow)
 
 ---
 
@@ -428,22 +463,24 @@ Tier visual identity:
 | Rupture | #F59E0B (Gold) | #F59E0B66 | "LEGENDARY" badge, flash |
 | Breach | #EF4444 (Red) | #EF444488 | Screen shake, extended |
 
-Drop rates scale with sacrifice amount via 5 brackets. Each row sums to 100%. Provably-fair RNG uses Chainlink VRF; the bracket is selected by `_bracket(amount)` in `EldritchGlyphs._deriveTier(bits, amount)`.
+Drop rates scale with **cumulative-per-epoch contribution** via 5 brackets. Each row sums to 100%. Provably-fair RNG uses Chainlink VRF; the bracket is selected by `_bracket(cumulativeContribution)` at `claimGlyphs` time, where `cumulativeContribution` is the wallet's total burn for this epoch (NOT any single sacrifice amount). All glyphs in a single batch share the same bracket.
 
-| Bracket | Sacrifice Range | Whisper | Echo | Tremor | Rupture | Breach |
-|---------|-----------------|---------|------|--------|---------|--------|
+| Bracket | Cumulative-per-epoch Range | Whisper | Echo | Tremor | Rupture | Breach |
+|---------|----------------------------|---------|------|--------|---------|--------|
 | 0 | 1 – 9 RITUAL | 50% | 28% | 15% | 6% | 1% |
 | 1 | 10 – 99 RITUAL | 42% | 30% | 18% | 8% | 2% |
 | 2 | 100 – 999 RITUAL | 30% | 30% | 24% | 12% | 4% |
 | 3 | 1,000 – 9,999 RITUAL | 20% | 27% | 28% | 17% | 8% |
 | 4 | ≥ 10,000 RITUAL | 12% | 22% | 30% | 22% | 14% |
 
+Note: brackets 0 and 1 are still reachable as cumulative contributions for users who sacrificed between 1 and 99 RITUAL — those contributions earn the Initiate cult rank but no glyphs (qualification threshold is 100 RITUAL of cumulative contribution per epoch).
+
 Design principles:
-- **Floor preserved**: 1 RITUAL is the entry point — no participants are gated out of the rare-pull dream.
+- **Splitting and concentrating are economically equivalent.** Because the bracket is selected from cumulative contribution at claim time, sacrificing 1000 RITUAL in one call or in 10 × 100-RITUAL chunks produces the same 10 glyphs at the same bracket-3 odds (closes H-01 incentive inversion).
+- **Floor preserved**: 1 RITUAL is still the entry point — it contributes to the collective summoning and to lifetime contribution (Initiate rank). It just does not mint a glyph below 100 RITUAL cumulative.
 - **Whales pay for probability density, not exclusivity**: Bracket 4 still has 12% Whisper, so even max-bracket sacrifices produce common dust occasionally.
-- **Modal experience shifts**: small sacrifices are most likely Whisper; bracket 3+ sacrifices most-often roll Tremor (the "rare").
+- **Modal experience shifts**: minnows (Initiate) earn the rank but no glyphs; bracket-2 players ($100+) reliably pull modest tiers; bracket-4 ($10k+) players most-often roll Tremor.
 - **Breach scales 1% → 14%** across brackets, ~doubling each step — the mythic remains rare but reachable for engaged players.
-- **Cost-per-rare is non-monotonic**: small players are economically efficient rare-hunters per RITUAL spent; whales pay for guaranteed glyph volume with elevated expected rarity per pull.
 
 ### 5.2 Rune Symbol Pool
 
@@ -474,16 +511,20 @@ Each glyph receives one of 10 lore fragments, determined on-chain by Chainlink V
 
 ### 5.4 Glyph Assignment Rules
 
-- One glyph per `commitRitual()` transaction (regardless of sacrifice amount in V1)
-- Minimum sacrifice of 100 $RITUAL required
-- 30-second cooldown between sacrifices (per wallet, enforced on-chain)
-- **Glyphs are on-chain ERC-1155 NFTs** minted by the EldritchGlyphs contract
-- Tier, rune, and lore are assigned by **Chainlink VRF** (provably fair randomness)
-- Each glyph is a unique token (auto-incrementing `tokenId`, amount=1)
-- Glyphs are **tradeable** — visible in wallets (OpenSea, etc.) and transferable
-- **EIP-2981 royalties**: 5% on all secondary sales, paid to protocol treasury
-- Cult rank reflects **on-chain `glyphCount`** (includes purchased/transferred glyphs)
-- Backend indexes `GlyphMinted` events for leaderboard/metadata; on-chain is source of truth
+- **Sacrifices are pure burns** — `commitRitual(amount)` burns RITUAL, accumulates contribution, and mints NO glyph.
+- **Glyphs are batch-claimed after epoch resolution** via `claimGlyphs(epochId)`. The function reads `contributions[epochId][wallet]` and issues ONE Chainlink VRF request returning `contributions / 100e18` random words (integer division), capped at `MAX_GLYPHS_PER_CLAIM = 50` per call.
+- **Qualification threshold**: 100 RITUAL of cumulative-per-epoch contribution. Below that, no glyphs are minted (the wallet still earns Initiate cult rank for lifetime burn).
+- **Per-epoch reset is automatic** — `contributions` is keyed by epochId; a wallet that contributed 50 + 60 across two epochs earns zero glyphs from either.
+- **Whales claim in multiple batches**: 510 RITUAL → 5 glyphs in one call; 6,000 RITUAL → 50 in the first call, 10 in the second.
+- **Bracket applied uniformly to a batch**: every glyph in a `claimGlyphs` batch is rolled against the bracket selected from the wallet's cumulative contribution at claim time (so splitting/concentrating yields identical outcomes).
+- `MIN_SACRIFICE = 1 RITUAL`. 30-second cooldown between sacrifices (per wallet, enforced on-chain).
+- **Glyphs are on-chain ERC-1155 NFTs** minted by the EldritchGlyphs contract via `_mintBatch`.
+- Tier, rune, and lore are assigned by **Chainlink VRF** (provably fair randomness).
+- Each glyph is a unique token (auto-incrementing `tokenId`, amount=1).
+- Glyphs are **tradeable** — visible in wallets (OpenSea, etc.) and transferable.
+- **EIP-2981 royalties**: 5% on all secondary sales, paid to protocol treasury.
+- Cult rank reflects **on-chain `glyphCount`** (includes purchased/transferred glyphs); Initiate rank reflects `lifetimeContribution`.
+- Backend indexes `GlyphsBatchRequested` + `GlyphMinted` + `GlyphsBatchMinted` events for leaderboard/metadata; on-chain is source of truth.
 
 ### 5.5 V2 Glyph Enhancements (Out of Scope for V1)
 
@@ -546,14 +587,17 @@ Provides long-term progression that persists across epochs. While epoch artifact
 
 ### 7.2 Rank Definitions
 
-| Rank | Glyphs Required | Color | Badge | Perks |
-|------|----------------|-------|-------|-------|
-| Uninitiated | 0 | #6B7280 | None | Default state |
-| Whisperer | 3 | #8B8B8B | Gray sigil | Proves participation |
-| Echo Walker | 8 | #4A9EFF | Blue sigil | Custom leaderboard frame |
-| Void Touched | 15 | #A855F7 | Purple sigil + particles | Early epoch announcements |
-| Rift Keeper | 25 | #F59E0B | Gold sigil + animated border | 1.1x contribution weight |
-| Herald of the Breach | 40 | #EF4444 | Red sigil + unique animation | 1.2x weight + vote on next Old One |
+| Rank | Condition | Color | Badge | Perks |
+|------|-----------|-------|-------|-------|
+| Uninitiated | 0 glyphs AND 0 lifetime | #6B7280 | None | Default state |
+| Initiate | 0 glyphs AND `lifetimeContribution > 0` | #94A3B8 | Pale sigil | Recognition for sub-threshold contributors |
+| Whisperer | ≥ 3 glyphs | #8B8B8B | Gray sigil | Proves participation |
+| Echo Walker | ≥ 8 glyphs | #4A9EFF | Blue sigil | Custom leaderboard frame |
+| Void Touched | ≥ 15 glyphs | #A855F7 | Purple sigil + particles | Early epoch announcements |
+| Rift Keeper | ≥ 25 glyphs | #F59E0B | Gold sigil + animated border | 1.1x contribution weight |
+| Herald of the Breach | ≥ 40 glyphs | #EF4444 | Red sigil + unique animation | 1.2x weight + vote on next Old One |
+
+**Initiate** sits between Uninitiated and Whisperer as a lateral state — it recognizes wallets that have burned RITUAL but never crossed the 100-RITUAL per-epoch glyph threshold. It is not part of the glyph-progression ladder (a wallet with 1 glyph is "Uninitiated" by the glyph table, not "Initiate"; the moment they hold a glyph they enter the glyph-tier track).
 
 ### 7.3 Display Requirements
 
@@ -561,7 +605,7 @@ Provides long-term progression that persists across epochs. While epoch artifact
 - Rank badge appears next to wallet address everywhere it's shown
 - Leaderboard entries show rank badges
 - On rank-up: inline celebration (glow pulse on rank bar, brief text callout)
-- Rank is calculated from on-chain `glyphCount(address)` in EldritchGlyphs contract (includes purchased/transferred glyphs)
+- Rank is derived from on-chain `EldritchGlyphs.glyphCount(address)` and `SummoningEngine.lifetimeContribution(address)` — both reads colocated in `useCultRank`. Glyph count includes purchased/transferred glyphs; lifetime contribution is the sum of all sacrifices ever (powers Initiate)
 
 ---
 
