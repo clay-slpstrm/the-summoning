@@ -2,17 +2,20 @@
  * On-chain event listener.
  *
  * Watches for:
- *   - RitualSacrifice events on SummoningEngine (epoch tracking)
- *   - GlyphRequested / GlyphMinted events on EldritchGlyphs (VRF glyph flow)
+ *   - RitualSacrifice events on SummoningEngine (epoch progress broadcast)
+ *   - GlyphsBatchRequested / GlyphMinted events on EldritchGlyphs
  *
- * The old glyphEngine pipeline is replaced by glyphMintHandler which
- * processes on-chain VRF events instead of deriving glyphs from txHash.
+ * Post-audit (C-01): glyphs are batched via claimGlyphs after epoch resolution,
+ * not minted at sacrifice time. The backend listens for the batch-request event
+ * (drives the channeling overlay during the VRF wait) and the per-glyph
+ * GlyphMinted event (one fan-out per glyph in the batch, drives the
+ * booster-pack reveal queue).
  */
 
 import { createPublicClient, http, parseAbiItem } from "viem";
 import { mainnet, sepolia } from "viem/chains";
 import { config } from "../config.js";
-import { handleGlyphRequested, handleGlyphMinted } from "./glyphMintHandler.js";
+import { handleGlyphsBatchRequested, handleGlyphMinted } from "./glyphMintHandler.js";
 import { wsManager } from "./wsManager.js";
 
 const chain = config.CHAIN_ID === 1 ? mainnet : sepolia;
@@ -28,8 +31,8 @@ const ritualSacrificeEvent = parseAbiItem(
   "event RitualSacrifice(uint256 indexed epochId, address indexed wallet, uint256 amount, uint256 totalCommitted)"
 );
 
-const glyphRequestedEvent = parseAbiItem(
-  "event GlyphRequested(uint256 indexed requestId, address indexed recipient, uint256 epochId)"
+const glyphsBatchRequestedEvent = parseAbiItem(
+  "event GlyphsBatchRequested(uint256 indexed requestId, address indexed recipient, uint256 epochId, uint256 numGlyphs, uint256 cumulativeContribution)"
 );
 
 const glyphMintedEvent = parseAbiItem(
@@ -99,12 +102,12 @@ export function startGlyphEventListener(): void {
     return;
   }
 
-  console.log(`[EVENTS] Listening for GlyphRequested + GlyphMinted on ${address}`);
+  console.log(`[EVENTS] Listening for GlyphsBatchRequested + GlyphMinted on ${address}`);
 
-  // Watch GlyphRequested (VRF request sent, glyph pending)
+  // Watch GlyphsBatchRequested (claimGlyphs issued a batched VRF request)
   client.watchEvent({
     address,
-    event: glyphRequestedEvent,
+    event: glyphsBatchRequestedEvent,
     pollingInterval: 4000,
     onLogs: async (logs) => {
       for (const log of logs) {
@@ -113,25 +116,35 @@ export function startGlyphEventListener(): void {
             requestId?: bigint;
             recipient?: string;
             epochId?: bigint;
+            numGlyphs?: bigint;
+            cumulativeContribution?: bigint;
           };
 
-          if (!args.requestId || !args.recipient || args.epochId === undefined) {
-            console.warn("[EVENTS] Missing GlyphRequested args:", log);
+          if (
+            !args.requestId ||
+            !args.recipient ||
+            args.epochId === undefined ||
+            args.numGlyphs === undefined ||
+            args.cumulativeContribution === undefined
+          ) {
+            console.warn("[EVENTS] Missing GlyphsBatchRequested args:", log);
             continue;
           }
 
-          await handleGlyphRequested({
+          await handleGlyphsBatchRequested({
             requestId: args.requestId,
             recipient: args.recipient,
             epochId: Number(args.epochId),
+            numGlyphs: Number(args.numGlyphs),
+            cumulativeContribution: args.cumulativeContribution,
           });
         } catch (err) {
-          console.error("[EVENTS] Error processing GlyphRequested:", err);
+          console.error("[EVENTS] Error processing GlyphsBatchRequested:", err);
         }
       }
     },
     onError: (error) => {
-      console.error("[EVENTS] GlyphRequested watch error:", error.message ?? error);
+      console.error("[EVENTS] GlyphsBatchRequested watch error:", error.message ?? error);
     },
   });
 

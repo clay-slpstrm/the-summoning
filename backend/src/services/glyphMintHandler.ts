@@ -1,15 +1,17 @@
 /**
  * On-chain glyph mint handler.
  *
- * Replaces the old glyphEngine pipeline. Instead of creating glyphs from
- * keccak256(txHash), this service listens for on-chain events from the
- * EldritchGlyphs contract:
+ * Post-audit (C-01) event flow on EldritchGlyphs:
  *
- *   GlyphRequested → push "glyph_pending" to wallet (channeling UX)
- *   GlyphMinted    → persist glyph, update rank, push "glyph_reveal"
+ *   GlyphsBatchRequested → push "glyph_pending" to wallet (channeling UX
+ *                           — covers the VRF wait between claimGlyphs tx
+ *                           confirmation and the GlyphMinted fan-out)
+ *   GlyphMinted (xN)     → persist each glyph, update rank, push "glyph_reveal"
+ *                           per glyph. The frontend enqueues them and animates
+ *                           a booster-pack reveal.
  *
- * The contract handles VRF + tier assignment; the backend is now an
- * event indexer and real-time delivery layer.
+ * The contract handles VRF + tier assignment; the backend is an event indexer
+ * and real-time delivery layer.
  */
 
 import { PrismaClient } from "@prisma/client";
@@ -21,10 +23,12 @@ const prisma = new PrismaClient();
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
-export type GlyphRequestedEvent = {
+export type GlyphsBatchRequestedEvent = {
   requestId: bigint;
   recipient: string;
   epochId: number;
+  numGlyphs: number;
+  cumulativeContribution: bigint;
 };
 
 export type GlyphMintedEvent = {
@@ -41,16 +45,17 @@ export type GlyphMintedEvent = {
 // ── Handlers ─────────────────────────────────────────────────────────────────
 
 /**
- * Handle GlyphRequested event — VRF request sent, glyph pending.
- * Pushes channeling state to the recipient's WebSocket.
+ * Handle GlyphsBatchRequested event — claimGlyphs has issued a batched VRF
+ * request; up to numGlyphs glyphs are pending. Pushes channeling state to the
+ * recipient's WebSocket so the UI can show the wait.
  */
-export async function handleGlyphRequested(
-  event: GlyphRequestedEvent
+export async function handleGlyphsBatchRequested(
+  event: GlyphsBatchRequestedEvent
 ): Promise<void> {
   const wallet = event.recipient.toLowerCase();
 
   console.log(
-    `[GLYPH] VRF requested: requestId=${event.requestId} wallet=${wallet} epoch=${event.epochId}`
+    `[GLYPH] Batch requested: requestId=${event.requestId} wallet=${wallet} epoch=${event.epochId} numGlyphs=${event.numGlyphs} cumulative=${event.cumulativeContribution}`
   );
 
   wsManager.sendToWallet(wallet, {
@@ -58,6 +63,8 @@ export async function handleGlyphRequested(
     data: {
       requestId: event.requestId.toString(),
       epochId: event.epochId,
+      numGlyphs: event.numGlyphs,
+      cumulativeContribution: event.cumulativeContribution.toString(),
       timestamp: Date.now(),
     },
   });
