@@ -378,6 +378,50 @@ contract MintingCurveTest is Test {
         assertGe(price2, price1);
     }
 
+    // ── Pausable (H-02) ──────────────────────────────────────────────────────
+
+    function test_Pause_RevertsMint() public {
+        vm.prank(owner);
+        curve.pause();
+
+        vm.prank(alice);
+        // EnforcedPause is from OpenZeppelin Pausable; we don't import the selector to
+        // avoid a hard dep, so a generic expectRevert suffices.
+        vm.expectRevert();
+        curve.mint{ value: 1 ether }(0);
+    }
+
+    function test_Unpause_RestoresMint() public {
+        vm.prank(owner);
+        curve.pause();
+
+        vm.prank(owner);
+        curve.unpause();
+
+        vm.prank(alice);
+        curve.mint{ value: 1 ether }(0);
+        assertGt(token.balanceOf(alice), 0);
+    }
+
+    function test_Pause_RevertsForNonOwner() public {
+        vm.prank(alice);
+        vm.expectRevert();
+        curve.pause();
+    }
+
+    function test_Pause_WithdrawStillWorks() public {
+        // Withdraw is intentionally not pausable so funds remain recoverable.
+        vm.prank(alice);
+        curve.mint{ value: 1 ether }(0);
+
+        vm.prank(owner);
+        curve.pause();
+
+        vm.prank(owner);
+        curve.withdraw(owner);
+        assertEq(address(curve).balance, 0);
+    }
+
     function testFuzz_ContractBalanceEqualsEthIn(uint256 ethIn) public {
         // Lower bound at the smallest viable mint after C-02 (0.0001 ether produces 0 tokens
         // at zero supply, so we use 0.001 ether to stay safely above the threshold).

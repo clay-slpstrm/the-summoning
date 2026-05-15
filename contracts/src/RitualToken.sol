@@ -7,13 +7,19 @@ import "@openzeppelin/contracts/access/Ownable.sol";
 
 /// @title RitualToken
 /// @notice ERC-20 token ($RITUAL) with restricted minting via MintingCurve and public burn.
+///         Capped at MAX_SUPPLY (1B tokens) — bounds the worst-case treasury value
+///         (H-05) and gives the bonding curve a defined endgame.
 contract RitualToken is ERC20, ERC20Burnable, Ownable {
+    /// @notice Hard cap on total supply. Enforced in mint().
+    uint256 public constant MAX_SUPPLY = 1_000_000_000e18;
+
     /// @notice The address authorized to mint tokens (MintingCurve contract).
     address public minter;
 
     error OnlyMinter();
     error MinterAlreadySet();
     error ZeroAddress();
+    error MaxSupplyExceeded();
 
     event MinterSet(address indexed minter);
 
@@ -33,10 +39,11 @@ contract RitualToken is ERC20, ERC20Burnable, Ownable {
         emit MinterSet(_minter);
     }
 
-    /// @notice Mint tokens. Only callable by the MintingCurve.
+    /// @notice Mint tokens. Only callable by the MintingCurve. Reverts above MAX_SUPPLY.
     /// @param to Recipient address.
     /// @param amount Token amount (18 decimals).
     function mint(address to, uint256 amount) external onlyMinter {
+        if (totalSupply() + amount > MAX_SUPPLY) revert MaxSupplyExceeded();
         _mint(to, amount);
     }
 }

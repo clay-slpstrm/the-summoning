@@ -825,6 +825,92 @@ contract SummoningEngineTest is Test {
         assertEq(engine.getContribution(1, bob), MIN * 2);
     }
 
+    // ── Pausable (H-02) ──────────────────────────────────────────────────────
+
+    function test_Pause_RevertsCommitRitual() public {
+        _startAndWarpToRitual();
+        vm.prank(owner);
+        engine.pause();
+
+        vm.prank(alice);
+        vm.expectRevert(); // EnforcedPause
+        engine.commitRitual(MIN);
+    }
+
+    function test_Pause_RevertsClaimGlyphs() public {
+        _startAndWarpToRitual();
+        vm.prank(alice); engine.commitRitual(200e18);
+        _resolve();
+
+        vm.prank(owner);
+        engine.pause();
+
+        vm.prank(alice);
+        vm.expectRevert();
+        engine.claimGlyphs(1);
+    }
+
+    function test_Pause_RevertsClaimReward() public {
+        _startAndWarpToRitual();
+        vm.prank(alice); engine.commitRitual(MIN);
+        _resolve();
+
+        vm.prank(owner);
+        engine.pause();
+
+        vm.prank(alice);
+        vm.expectRevert();
+        engine.claimReward(1);
+    }
+
+    function test_Unpause_RestoresAllFunctions() public {
+        _startAndWarpToRitual();
+        vm.prank(owner);
+        engine.pause();
+        vm.prank(owner);
+        engine.unpause();
+
+        // All three should now succeed.
+        vm.prank(alice); engine.commitRitual(200e18);
+        _resolve();
+        vm.prank(alice); engine.claimReward(1);
+        vm.prank(alice); engine.claimGlyphs(1);
+    }
+
+    function test_Pause_ResolveEpoch_StillWorks() public {
+        // resolveEpoch is intentionally not pausable — epochs must still settle.
+        _startAndWarpToRitual();
+        vm.prank(alice); engine.commitRitual(MIN);
+        vm.prank(owner);
+        engine.pause();
+
+        SummoningEngine.Epoch memory e = engine.getEpoch(1);
+        vm.warp(e.ritualEnd);
+        engine.resolveEpoch();
+        assertTrue(engine.getEpoch(1).resolved);
+    }
+
+    function test_Pause_OnlyOwner() public {
+        vm.prank(alice);
+        vm.expectRevert();
+        engine.pause();
+    }
+
+    // ── M-01 solo Harbinger ──────────────────────────────────────────────────
+
+    function test_SoloContributor_GetsHarbinger() public {
+        _startAndWarpToRitual();
+        vm.prank(alice); engine.commitRitual(THRESHOLD);
+        _resolve();
+        assertTrue(engine.getEpoch(1).successful);
+
+        vm.prank(alice);
+        engine.claimReward(1);
+
+        // tierId 1 = Harbinger, tokenId = 1*1000 + 1 = 1001
+        assertEq(artifacts.balanceOf(alice, 1001), 1);
+    }
+
     // ── nextThreshold ────────────────────────────────────────────────────────
 
     function test_NextThreshold_Escalates_OnSuccess() public {
@@ -895,10 +981,11 @@ contract SummoningEngineTest is Test {
         // 5. Claim
         vm.prank(alice);
         engine.claimReward(1);
-        // Alice is sole contributor → tierId 1 (Harbinger)? No: avg=alice, alice >= alice*10? No.
-        // She gets tierId 3 (Cultist). Confirm she got exactly 1 artifact.
-        uint256 aliceTotal = artifacts.balanceOf(alice, 1001) + artifacts.balanceOf(alice, 1002) + artifacts.balanceOf(alice, 1003);
-        assertEq(aliceTotal, 1);
+        // M-01: alice is the sole contributor → Harbinger (tier 1, tokenId 1001).
+        assertEq(artifacts.balanceOf(alice, 1001), 1);
+        // No artifact at the other tiers.
+        assertEq(artifacts.balanceOf(alice, 1002), 0);
+        assertEq(artifacts.balanceOf(alice, 1003), 0);
 
         // 6. Start next epoch
         uint256 newThreshold = engine.nextThreshold();

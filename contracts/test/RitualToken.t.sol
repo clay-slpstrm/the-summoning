@@ -150,7 +150,8 @@ contract RitualTokenTest is Test {
     // ── Invariant: totalBurned <= totalMinted ───────────────────────────────
 
     function testFuzz_TotalSupplyNeverExceedsTotalMinted(uint256 mintAmount, uint256 burnAmount) public {
-        mintAmount = bound(mintAmount, 1, 1e30);
+        // Bounded by MAX_SUPPLY (H-05). The invariant under test is unrelated to the cap.
+        mintAmount = bound(mintAmount, 1, token.MAX_SUPPLY());
         burnAmount = bound(burnAmount, 0, mintAmount);
 
         vm.prank(owner);
@@ -162,5 +163,52 @@ contract RitualTokenTest is Test {
         token.burn(burnAmount);
 
         assertLe(token.totalSupply(), mintAmount);
+    }
+
+    // ── MAX_SUPPLY (H-05) ───────────────────────────────────────────────────
+
+    function test_MaxSupply_IsOneBillion() public view {
+        assertEq(token.MAX_SUPPLY(), 1_000_000_000e18);
+    }
+
+    function test_Mint_RevertsAtMaxSupply() public {
+        uint256 cap = token.MAX_SUPPLY();
+        vm.prank(owner);
+        token.setMinter(minter);
+
+        vm.prank(minter);
+        token.mint(alice, cap);
+
+        vm.prank(minter);
+        vm.expectRevert(RitualToken.MaxSupplyExceeded.selector);
+        token.mint(alice, 1);
+    }
+
+    function test_Mint_Succeeds_OneBelowMax() public {
+        uint256 cap = token.MAX_SUPPLY();
+        vm.prank(owner);
+        token.setMinter(minter);
+
+        vm.prank(minter);
+        token.mint(alice, cap - 1);
+        assertEq(token.totalSupply(), cap - 1);
+
+        vm.prank(minter);
+        token.mint(alice, 1);
+        assertEq(token.totalSupply(), cap);
+    }
+
+    function test_Mint_RevertsOnOverflow_AboveMax() public {
+        uint256 half = token.MAX_SUPPLY() / 2;
+        vm.prank(owner);
+        token.setMinter(minter);
+
+        // First mint half-supply, then attempt a mint that would push past the cap.
+        vm.prank(minter);
+        token.mint(alice, half);
+
+        vm.prank(minter);
+        vm.expectRevert(RitualToken.MaxSupplyExceeded.selector);
+        token.mint(alice, half + 2);
     }
 }

@@ -3,15 +3,18 @@ pragma solidity ^0.8.24;
 
 import "@openzeppelin/contracts/access/Ownable.sol";
 import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
+import "@openzeppelin/contracts/utils/Pausable.sol";
 import "./interfaces/IRitualToken.sol";
 
 /// @title MintingCurve
 /// @notice Holds ETH and mints $RITUAL at a linearly increasing price.
 ///         All ETH (12% protocol fee + 88% treasury) is withdrawable by the owner (multisig).
+///         Owner can pause mint() in an incident (H-02); withdraw is not gated by pause
+///         so funds remain recoverable.
 /// @dev Price formula: BASE_PRICE * (1 + totalSupplyInTokens / SCALE_FACTOR)
 ///      Supply is normalized from wei to whole tokens before applying SCALE_FACTOR.
 ///      Protocol fee (12%) is deducted from ETH in; remainder determines token output.
-contract MintingCurve is Ownable, ReentrancyGuard {
+contract MintingCurve is Ownable, ReentrancyGuard, Pausable {
     IRitualToken public immutable ritualToken;
 
     uint256 public constant BASE_PRICE = 0.0001 ether; // price per token at zero supply
@@ -66,7 +69,7 @@ contract MintingCurve is Ownable, ReentrancyGuard {
     ///      ETH cost for minting from s₀ to s₁ = BASE_PRICE * ((s₁ - s₀) + (s₁² - s₀²) / (2 * SCALE_FACTOR))
     ///      Solving for s₁ given netEth yields a quadratic; we use the quadratic formula.
     /// @param minTokens Minimum tokens to receive; reverts if actual output is less.
-    function mint(uint256 minTokens) external payable nonReentrant {
+    function mint(uint256 minTokens) external payable nonReentrant whenNotPaused {
         if (msg.value == 0) revert MintingCurve__InsufficientPayment();
 
         uint256 fee = msg.value * PROTOCOL_FEE_BPS / BPS_DENOMINATOR;
@@ -83,7 +86,18 @@ contract MintingCurve is Ownable, ReentrancyGuard {
         emit TokensMinted(msg.sender, msg.value, tokensOut, fee);
     }
 
+    /// @notice Pause mint() during an incident. Owner-only.
+    function pause() external onlyOwner {
+        _pause();
+    }
+
+    /// @notice Resume mint() after a pause. Owner-only.
+    function unpause() external onlyOwner {
+        _unpause();
+    }
+
     /// @notice Owner withdraws ETH from the contract. Sends the entire balance.
+    ///         Not pausable so funds remain recoverable even mid-incident.
     /// @param to Recipient address (multisig).
     function withdraw(address to) external onlyOwner nonReentrant {
         if (to == address(0)) revert MintingCurve__ZeroAddress();

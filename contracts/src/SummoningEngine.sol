@@ -3,6 +3,7 @@ pragma solidity ^0.8.24;
 
 import "@openzeppelin/contracts/access/Ownable.sol";
 import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
+import "@openzeppelin/contracts/utils/Pausable.sol";
 import "@chainlink/contracts/src/v0.8/automation/AutomationCompatible.sol";
 import "./interfaces/IRitualToken.sol";
 import "./interfaces/IElderArtifacts.sol";
@@ -18,7 +19,7 @@ import "./interfaces/IEldritchGlyphs.sol";
 ///         at MAX_GLYPHS_PER_CLAIM). Separately, claimReward(epochId) mints the ERC-1155
 ///         artifact for the wallet's tier.
 ///         Implements Chainlink Automation for automatic epoch resolution.
-contract SummoningEngine is Ownable, ReentrancyGuard, AutomationCompatibleInterface {
+contract SummoningEngine is Ownable, ReentrancyGuard, Pausable, AutomationCompatibleInterface {
 
     // ── Epoch State ──────────────────────────────────────────────────────────
 
@@ -123,6 +124,20 @@ contract SummoningEngine is Ownable, ReentrancyGuard, AutomationCompatibleInterf
         glyphs = IEldritchGlyphs(_glyphs);
     }
 
+    // ── Pause Controls (Owner) ───────────────────────────────────────────────
+
+    /// @notice Pause commitRitual, claimGlyphs, and claimReward during an incident.
+    ///         resolveEpoch and Chainlink Automation upkeep remain functional so epochs
+    ///         can still resolve while paused.
+    function pause() external onlyOwner {
+        _pause();
+    }
+
+    /// @notice Resume gameplay functions after a pause.
+    function unpause() external onlyOwner {
+        _unpause();
+    }
+
     // ── Epoch Management (Owner) ─────────────────────────────────────────────
 
     /// @notice Start a new epoch. Begins the Gathering phase immediately.
@@ -163,7 +178,7 @@ contract SummoningEngine is Ownable, ReentrancyGuard, AutomationCompatibleInterf
     ///         to claimGlyphs(epochId) after the epoch resolves.
     ///         Caller must have approved this contract for at least `amount` $RITUAL.
     /// @param amount Token amount (18 decimals) to sacrifice. Must be >= MIN_SACRIFICE.
-    function commitRitual(uint256 amount) external nonReentrant {
+    function commitRitual(uint256 amount) external nonReentrant whenNotPaused {
         if (currentEpochId == 0) revert SummoningEngine__NoActiveEpoch();
 
         uint256 id = currentEpochId;
@@ -207,7 +222,7 @@ contract SummoningEngine is Ownable, ReentrancyGuard, AutomationCompatibleInterf
     ///         again (the same VRF cost applies per batch).
     /// @param epochId The resolved epoch to claim glyphs from.
     /// @return numClaimed Number of glyphs requested in this call.
-    function claimGlyphs(uint256 epochId) external nonReentrant returns (uint256 numClaimed) {
+    function claimGlyphs(uint256 epochId) external nonReentrant whenNotPaused returns (uint256 numClaimed) {
         Epoch storage epoch = epochs[epochId];
         if (!epoch.resolved) revert SummoningEngine__EpochNotResolved();
 
@@ -256,7 +271,7 @@ contract SummoningEngine is Ownable, ReentrancyGuard, AutomationCompatibleInterf
     ///         Contribution is preserved after claim (still readable by claimGlyphs);
     ///         double-claim is prevented by the `rewardClaimed` flag.
     /// @param epochId The epoch to claim for.
-    function claimReward(uint256 epochId) external nonReentrant {
+    function claimReward(uint256 epochId) external nonReentrant whenNotPaused {
         Epoch storage epoch = epochs[epochId];
         if (!epoch.resolved) revert SummoningEngine__EpochNotResolved();
 
@@ -365,6 +380,8 @@ contract SummoningEngine is Ownable, ReentrancyGuard, AutomationCompatibleInterf
     /// @dev Determines reward tier from contribution percentile.
     ///      Failed epochs always yield tierId 0 (Shattered Ritual).
     ///      Successful epochs use average-multiple thresholds as a V1 approximation.
+    ///      Sole contributors get Harbinger (M-01) — the avg-multiple formula is
+    ///      otherwise unreachable for a single participant since contribution == avg.
     ///      Production: use merkle proofs from off-chain percentile calculation.
     function _calculateTier(
         uint256 epochId,
@@ -374,6 +391,8 @@ contract SummoningEngine is Ownable, ReentrancyGuard, AutomationCompatibleInterf
         if (!successful) return 0; // Shattered Ritual
 
         Epoch storage epoch = epochs[epochId];
+        if (epoch.participantCount == 1) return 1; // sole summoner → Harbinger (M-01)
+
         uint256 avgContribution = epoch.totalCommitted / epoch.participantCount;
 
         if (contribution >= avgContribution * 10) return 1; // Harbinger  (~top 1%)
