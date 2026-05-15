@@ -11,10 +11,14 @@ import { VRFV2PlusClient } from
 import { IEldritchGlyphs } from "./interfaces/IEldritchGlyphs.sol";
 
 /// @title EldritchGlyphs — Tradeable on-chain glyph NFTs with Chainlink VRF
-/// @notice Each sacrifice in SummoningEngine mints one glyph NFT via VRF.
-///         Tiers are provably fair. 5% royalty on secondary sales (EIP-2981).
+/// @notice Glyphs are claimed in batches after epoch resolution. SummoningEngine.claimGlyphs
+///         issues ONE VRF request per wallet per epoch, returning N random words; this
+///         contract mints one glyph per word. Tier weights are selected by the wallet's
+///         cumulative contribution to the epoch (the same bracket applies to every glyph
+///         in the batch), making split vs. concentrated sacrifices economically equivalent.
+///         5% royalty on secondary sales (EIP-2981).
 ///
-///         Tier distribution scales with sacrifice amount via 5 brackets
+///         Tier distribution by cumulative-contribution bracket
 ///         (basis points out of 10,000 — each row sums to 10,000):
 ///
 ///           Bracket 0  (1–9 RITUAL):       50% / 28% / 15% /  6% /  1%
@@ -30,6 +34,10 @@ contract EldritchGlyphs is ERC1155, VRFConsumerBaseV2Plus, ERC2981, IEldritchGly
     uint8 internal constant NUM_RUNES = 30;
     uint8 internal constant NUM_LORE = 10;
     uint16 internal constant BPS_TOTAL = 10_000;
+
+    /// @notice Maximum glyphs mintable per VRF request. Caps callback gas.
+    ///         The engine enforces the same cap on claimGlyphs; whales claim in batches.
+    uint256 public constant MAX_GLYPHS_PER_REQUEST = 50;
 
     // ── VRF Config (immutable) ──
 
@@ -47,11 +55,12 @@ contract EldritchGlyphs is ERC1155, VRFConsumerBaseV2Plus, ERC2981, IEldritchGly
     address public summoningEngine;
     uint256 public nextTokenId = 1;
 
-    /// @notice VRF request → pending glyph data
+    /// @notice VRF request → pending batch metadata
     struct PendingGlyph {
         address recipient;
         uint256 epochId;
-        uint256 amount; // sacrifice amount — determines tier bracket on fulfillment
+        uint256 cumulativeContribution; // selects tier bracket on fulfillment (epoch-cumulative)
+        uint256 numGlyphs;              // how many glyphs to mint on fulfillment
         bool fulfilled;
     }
 
@@ -118,23 +127,32 @@ contract EldritchGlyphs is ERC1155, VRFConsumerBaseV2Plus, ERC2981, IEldritchGly
 
     // ── Core: VRF Request ──
 
-    /// @notice Request a glyph mint. Called by SummoningEngine after each sacrifice.
-    /// @param recipient The wallet that will receive the glyph NFT.
-    /// @param epochId The current epoch ID.
-    /// @param amount Sacrifice amount in wei — selects the tier weight bracket on fulfillment.
+    /// @notice Request a batch of glyph mints via a single VRF call. Called by SummoningEngine
+    ///         from claimGlyphs after epoch resolution. The wallet's cumulative contribution
+    ///         to the epoch determines the tier bracket; the same bracket applies to every
+    ///         glyph in the batch (splitting vs. concentrating cannot change the odds row).
+    /// @param recipient The wallet that will receive the glyph NFTs.
+    /// @param epochId The epoch the glyphs are being claimed for.
+    /// @param numGlyphs The number of glyphs to mint (1..MAX_GLYPHS_PER_REQUEST).
+    /// @param cumulativeContribution Wallet's total contribution to epochId in wei.
     /// @return requestId The Chainlink VRF request ID.
-    function requestGlyph(address recipient, uint256 epochId, uint256 amount)
-        external
-        onlyEngine
-        returns (uint256 requestId)
-    {
+    function requestBatch(
+        address recipient,
+        uint256 epochId,
+        uint256 numGlyphs,
+        uint256 cumulativeContribution
+    ) external onlyEngine returns (uint256 requestId) {
+        if (numGlyphs == 0 || numGlyphs > MAX_GLYPHS_PER_REQUEST) {
+            revert EldritchGlyphs__InvalidBatchSize();
+        }
+
         requestId = s_vrfCoordinator.requestRandomWords(
             VRFV2PlusClient.RandomWordsRequest({
                 keyHash: keyHash,
                 subId: subscriptionId,
                 requestConfirmations: requestConfirmations,
                 callbackGasLimit: callbackGasLimit,
-                numWords: 1,
+                numWords: uint32(numGlyphs),
                 extraArgs: VRFV2PlusClient._argsToBytes(
                     VRFV2PlusClient.ExtraArgsV1({ nativePayment: false })
                 )
@@ -144,44 +162,66 @@ contract EldritchGlyphs is ERC1155, VRFConsumerBaseV2Plus, ERC2981, IEldritchGly
         pendingGlyphs[requestId] = PendingGlyph({
             recipient: recipient,
             epochId: epochId,
-            amount: amount,
+            cumulativeContribution: cumulativeContribution,
+            numGlyphs: numGlyphs,
             fulfilled: false
         });
 
-        emit GlyphRequested(requestId, recipient, epochId);
+        emit GlyphsBatchRequested(requestId, recipient, epochId, numGlyphs, cumulativeContribution);
     }
 
     // ── Core: VRF Callback ──
 
-    /// @notice Chainlink VRF callback. Mints the glyph NFT with derived tier/rune/lore.
+    /// @notice Chainlink VRF callback. Mints `numGlyphs` glyph NFTs in a single batch,
+    ///         each rolled independently from its random word against the bracket selected
+    ///         by the wallet's cumulative contribution.
     function fulfillRandomWords(uint256 requestId, uint256[] calldata randomWords) internal override {
         PendingGlyph storage pending = pendingGlyphs[requestId];
         if (pending.recipient == address(0)) revert EldritchGlyphs__RequestNotFound();
-        if (pending.fulfilled) revert EldritchGlyphs__RequestNotFound(); // Already fulfilled
+        if (pending.fulfilled) revert EldritchGlyphs__RequestNotFound(); // already fulfilled
 
         pending.fulfilled = true;
-        uint256 seed = randomWords[0];
 
-        // Derive tier from bits 0-63 — bracket selected by sacrifice amount
-        uint8 tier = _deriveTier(uint64(seed), pending.amount);
-        // Derive rune from bits 64-127
+        address recipient = pending.recipient;
+        uint256 epochId = pending.epochId;
+        uint8 bracket = _bracket(pending.cumulativeContribution);
+        uint256 numGlyphs = randomWords.length;
+
+        uint256[] memory ids = new uint256[](numGlyphs);
+        uint256[] memory values = new uint256[](numGlyphs);
+
+        for (uint256 i = 0; i < numGlyphs; i++) {
+            ids[i] = _recordGlyph(recipient, epochId, bracket, randomWords[i]);
+            values[i] = 1;
+        }
+
+        // Batch mint: one ERC-1155 TransferBatch event and one _update call.
+        _mintBatch(recipient, ids, values, "");
+        emit GlyphsBatchMinted(requestId, recipient, epochId, numGlyphs);
+    }
+
+    /// @dev Derive tier/rune/lore from one random word, persist GlyphData, emit GlyphMinted.
+    ///      Factored out of fulfillRandomWords to avoid stack-too-deep with the loop.
+    function _recordGlyph(
+        address recipient,
+        uint256 epochId,
+        uint8 bracket,
+        uint256 seed
+    ) internal returns (uint256 tokenId) {
+        uint8 tier = _deriveTierFromBracket(uint64(seed), bracket);
         uint8 runeIndex = uint8((seed >> 64) % NUM_RUNES);
-        // Derive lore from bits 128-191
         uint8 loreIndex = uint8((seed >> 128) % NUM_LORE);
 
-        uint256 tokenId = nextTokenId++;
+        tokenId = nextTokenId++;
         glyphData[tokenId] = GlyphData({
             tier: tier,
             runeIndex: runeIndex,
             loreIndex: loreIndex,
-            epochId: pending.epochId,
-            originalRecipient: pending.recipient
+            epochId: epochId,
+            originalRecipient: recipient
         });
 
-        // Mint (updates glyphCount via _update override)
-        _mint(pending.recipient, tokenId, 1, "");
-
-        emit GlyphMinted(tokenId, pending.recipient, tier, runeIndex, loreIndex, pending.epochId);
+        emit GlyphMinted(tokenId, recipient, tier, runeIndex, loreIndex, epochId);
     }
 
     // ── Tier Derivation ──
@@ -212,9 +252,9 @@ contract EldritchGlyphs is ERC1155, VRFConsumerBaseV2Plus, ERC2981, IEldritchGly
         }
     }
 
-    /// @dev Pick a tier 0-4 from random bits, weighted by sacrifice amount's bracket.
-    function _deriveTier(uint64 bits, uint256 amount) internal pure returns (uint8) {
-        uint16[5] memory w = _tierWeights(_bracket(amount));
+    /// @dev Pick a tier 0-4 from random bits at a pre-computed bracket.
+    function _deriveTierFromBracket(uint64 bits, uint8 bracket) internal pure returns (uint8) {
+        uint16[5] memory w = _tierWeights(bracket);
         uint16 roll = uint16(bits % BPS_TOTAL);
         uint16 cumulative;
         for (uint8 i = 0; i < 5; i++) {

@@ -49,6 +49,7 @@ export const SUMMONING_ENGINE_ABI = parseAbi([
   "function commitRitual(uint256 amount)",
   "function resolveEpoch()",
   "function claimReward(uint256 epochId)",
+  "function claimGlyphs(uint256 epochId) returns (uint256 numClaimed)",
   // Views
   "function currentEpochId() view returns (uint256)",
   "function getCurrentPhase() view returns (uint8)",
@@ -58,11 +59,15 @@ export const SUMMONING_ENGINE_ABI = parseAbi([
   "function nextThreshold() view returns (uint256)",
   "function lastSacrificeTime(address) view returns (uint256)",
   "function contributions(uint256 epochId, address wallet) view returns (uint256)",
+  "function lifetimeContribution(address wallet) view returns (uint256)",
+  "function glyphsClaimedCount(uint256 epochId, address wallet) view returns (uint256)",
+  "function rewardClaimed(uint256 epochId, address wallet) view returns (bool)",
   // Events
   "event EpochStarted(uint256 indexed epochId, uint256 oldOneId, uint256 threshold, uint256 gatheringStart)",
   "event RitualSacrifice(uint256 indexed epochId, address indexed wallet, uint256 amount, uint256 totalCommitted)",
   "event EpochResolved(uint256 indexed epochId, bool successful, uint256 totalBurned)",
   "event RewardClaimed(uint256 indexed epochId, address indexed wallet, uint256 tierId)",
+  "event GlyphsClaimRequested(uint256 indexed epochId, address indexed wallet, uint256 numGlyphs, uint256 cumulativeContribution)",
 ]);
 
 export const ELDER_ARTIFACTS_ABI = parseAbi([
@@ -79,6 +84,7 @@ export const ELDRITCH_GLYPHS_ABI = parseAbi([
   "function balanceOf(address account, uint256 id) view returns (uint256)",
   "function uri(uint256 tokenId) view returns (string)",
   // Events
-  "event GlyphRequested(uint256 indexed requestId, address indexed recipient, uint256 epochId)",
+  "event GlyphsBatchRequested(uint256 indexed requestId, address indexed recipient, uint256 epochId, uint256 numGlyphs, uint256 cumulativeContribution)",
   "event GlyphMinted(uint256 indexed tokenId, address indexed recipient, uint8 tier, uint8 runeIndex, uint8 loreIndex, uint256 epochId)",
+  "event GlyphsBatchMinted(uint256 indexed requestId, address indexed recipient, uint256 epochId, uint256 numGlyphs)",
 ]);

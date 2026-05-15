@@ -19,7 +19,8 @@ contract EldritchGlyphsTest is Test {
 
     uint256 subId;
     bytes32 constant KEY_HASH = keccak256("test-key-hash");
-    uint32 constant CALLBACK_GAS_LIMIT = 300_000;
+    // Large enough to fulfill 50-glyph batches under the mock coordinator.
+    uint32 constant CALLBACK_GAS_LIMIT = 2_500_000;
     uint16 constant REQUEST_CONFIRMATIONS = 3;
     string constant BASE_URI = "https://api.thesummoning.xyz/metadata/glyph/";
 
@@ -51,14 +52,14 @@ contract EldritchGlyphsTest is Test {
 
     // ── Helpers ──────────────────────────────────────────────────────────────
 
-    /// Request a glyph from the engine and fulfill VRF with specific random words.
-    /// @param amount Sacrifice amount — selects the tier-weight bracket (1e18 = bracket 0).
-    function _requestAndFulfill(address recipient, uint256 epochId, uint256 amount, uint256 randomWord)
+    /// Request a single-glyph batch and fulfill VRF with a specific random word.
+    /// @param cumulativeContribution Wallet's epoch-cumulative contribution — selects bracket.
+    function _requestAndFulfill(address recipient, uint256 epochId, uint256 cumulativeContribution, uint256 randomWord)
         internal
         returns (uint256 tokenId)
     {
         vm.prank(engine);
-        uint256 requestId = glyphs.requestGlyph(recipient, epochId, amount);
+        uint256 requestId = glyphs.requestBatch(recipient, epochId, 1, cumulativeContribution);
 
         uint256[] memory words = new uint256[](1);
         words[0] = randomWord;
@@ -67,7 +68,7 @@ contract EldritchGlyphsTest is Test {
         tokenId = glyphs.nextTokenId() - 1;
     }
 
-    /// Backward-compat overload: bracket-0 sacrifice (1 RITUAL).
+    /// Backward-compat overload: bracket-0 (1 RITUAL cumulative).
     function _requestAndFulfill(address recipient, uint256 epochId, uint256 randomWord)
         internal
         returns (uint256 tokenId)
@@ -81,8 +82,20 @@ contract EldritchGlyphsTest is Test {
         returns (uint256 requestId)
     {
         vm.prank(engine);
-        requestId = glyphs.requestGlyph(recipient, epochId, 1e18);
+        requestId = glyphs.requestBatch(recipient, epochId, 1, 1e18);
         vrfCoordinator.fulfillRandomWords(requestId, address(glyphs));
+    }
+
+    /// Request a multi-glyph batch and fulfill VRF with provided random words.
+    function _requestAndFulfillBatch(
+        address recipient,
+        uint256 epochId,
+        uint256 cumulativeContribution,
+        uint256[] memory words
+    ) internal returns (uint256 requestId) {
+        vm.prank(engine);
+        requestId = glyphs.requestBatch(recipient, epochId, words.length, cumulativeContribution);
+        vrfCoordinator.fulfillRandomWordsWithOverride(requestId, address(glyphs), words);
     }
 
     // ── Deployment ───────────────────────────────────────────────────────────
@@ -138,30 +151,56 @@ contract EldritchGlyphsTest is Test {
         assertEq(amount, 0.1 ether);
     }
 
-    // ── Request Glyph ────────────────────────────────────────────────────────
+    // ── Request Batch ────────────────────────────────────────────────────────
 
-    function test_RequestGlyph_OnlyEngine() public {
+    function test_RequestBatch_OnlyEngine() public {
         vm.prank(alice);
         vm.expectRevert(IEldritchGlyphs.EldritchGlyphs__OnlyEngine.selector);
-        glyphs.requestGlyph(alice, 1, 1e18);
+        glyphs.requestBatch(alice, 1, 1, 1e18);
     }
 
-    function test_RequestGlyph_StoresPending() public {
+    function test_RequestBatch_StoresPending() public {
         vm.prank(engine);
-        uint256 requestId = glyphs.requestGlyph(alice, 1, 1e18);
+        uint256 requestId = glyphs.requestBatch(alice, 1, 3, 500e18);
 
-        (address recipient, uint256 epochId, uint256 amount, bool fulfilled) = glyphs.pendingGlyphs(requestId);
+        (
+            address recipient,
+            uint256 epochId,
+            uint256 cumulativeContribution,
+            uint256 numGlyphs,
+            bool fulfilled
+        ) = glyphs.pendingGlyphs(requestId);
         assertEq(recipient, alice);
         assertEq(epochId, 1);
-        assertEq(amount, 1e18);
+        assertEq(cumulativeContribution, 500e18);
+        assertEq(numGlyphs, 3);
         assertFalse(fulfilled);
     }
 
-    function test_RequestGlyph_EmitsEvent() public {
+    function test_RequestBatch_EmitsEvent() public {
         vm.prank(engine);
         vm.expectEmit(true, true, false, true);
-        emit IEldritchGlyphs.GlyphRequested(1, alice, 1);
-        glyphs.requestGlyph(alice, 1, 1e18);
+        emit IEldritchGlyphs.GlyphsBatchRequested(1, alice, 1, 2, 200e18);
+        glyphs.requestBatch(alice, 1, 2, 200e18);
+    }
+
+    function test_RequestBatch_RevertsOnZero() public {
+        vm.prank(engine);
+        vm.expectRevert(IEldritchGlyphs.EldritchGlyphs__InvalidBatchSize.selector);
+        glyphs.requestBatch(alice, 1, 0, 100e18);
+    }
+
+    function test_RequestBatch_RevertsAboveCap() public {
+        vm.prank(engine);
+        vm.expectRevert(IEldritchGlyphs.EldritchGlyphs__InvalidBatchSize.selector);
+        glyphs.requestBatch(alice, 1, 51, 100e18);
+    }
+
+    function test_RequestBatch_AcceptsCapExactly() public {
+        vm.prank(engine);
+        uint256 requestId = glyphs.requestBatch(alice, 1, 50, 5_000e18);
+        (, , , uint256 numGlyphs, ) = glyphs.pendingGlyphs(requestId);
+        assertEq(numGlyphs, 50);
     }
 
     // ── Fulfill (VRF Callback) ───────────────────────────────────────────────
@@ -196,16 +235,16 @@ contract EldritchGlyphsTest is Test {
 
     function test_Fulfill_MarksFulfilled() public {
         vm.prank(engine);
-        uint256 requestId = glyphs.requestGlyph(alice, 1, 1e18);
+        uint256 requestId = glyphs.requestBatch(alice, 1, 1, 1e18);
         vrfCoordinator.fulfillRandomWords(requestId, address(glyphs));
 
-        (, , , bool fulfilled) = glyphs.pendingGlyphs(requestId);
+        (, , , , bool fulfilled) = glyphs.pendingGlyphs(requestId);
         assertTrue(fulfilled);
     }
 
     function test_Fulfill_RevertsOnDoubleFulfill() public {
         vm.prank(engine);
-        uint256 requestId = glyphs.requestGlyph(alice, 1, 1e18);
+        uint256 requestId = glyphs.requestBatch(alice, 1, 1, 1e18);
         vrfCoordinator.fulfillRandomWords(requestId, address(glyphs));
 
         // Second fulfillment should revert (fulfilled flag is checked)
@@ -215,7 +254,7 @@ contract EldritchGlyphsTest is Test {
 
     function test_Fulfill_EmitsGlyphMinted() public {
         vm.prank(engine);
-        uint256 requestId = glyphs.requestGlyph(alice, 1, 1e18);
+        uint256 requestId = glyphs.requestBatch(alice, 1, 1, 1e18);
 
         // Use specific word so we can predict the event args
         uint256[] memory words = new uint256[](1);
@@ -227,6 +266,66 @@ contract EldritchGlyphsTest is Test {
         vm.expectEmit(true, true, false, true);
         emit IEldritchGlyphs.GlyphMinted(1, alice, expectedTier, expectedRune, expectedLore, 1);
         vrfCoordinator.fulfillRandomWordsWithOverride(requestId, address(glyphs), words);
+    }
+
+    function test_Fulfill_MintsBatch_FiveGlyphs() public {
+        uint256[] memory words = new uint256[](5);
+        words[0] = 1;
+        words[1] = 5001;
+        words[2] = 7801;
+        words[3] = 9301;
+        words[4] = 9901;
+        // bracket 0 (1 RITUAL): boundaries 5000/7800/9300/9900 → tiers 0/1/2/3/4
+        uint256 requestId = _requestAndFulfillBatch(alice, 1, 1e18, words);
+
+        assertEq(glyphs.nextTokenId(), 6);
+        // All five tokens minted to alice
+        for (uint256 i = 1; i <= 5; i++) {
+            assertEq(glyphs.balanceOf(alice, i), 1);
+        }
+        assertEq(glyphs.glyphCount(alice), 5);
+
+        // GlyphData stored for each
+        assertEq(glyphs.getGlyphData(1).tier, 0);
+        assertEq(glyphs.getGlyphData(2).tier, 1);
+        assertEq(glyphs.getGlyphData(3).tier, 2);
+        assertEq(glyphs.getGlyphData(4).tier, 3);
+        assertEq(glyphs.getGlyphData(5).tier, 4);
+
+        // BatchMinted event emitted on the batch
+        (, , , , bool fulfilled) = glyphs.pendingGlyphs(requestId);
+        assertTrue(fulfilled);
+    }
+
+    function test_Fulfill_MintsBatch_EmitsGlyphsBatchMinted() public {
+        vm.prank(engine);
+        uint256 requestId = glyphs.requestBatch(alice, 1, 3, 300e18);
+
+        uint256[] memory words = new uint256[](3);
+        words[0] = 1; words[1] = 2; words[2] = 3;
+
+        vm.expectEmit(true, true, false, true);
+        emit IEldritchGlyphs.GlyphsBatchMinted(requestId, alice, 1, 3);
+        vrfCoordinator.fulfillRandomWordsWithOverride(requestId, address(glyphs), words);
+    }
+
+    function test_Fulfill_MintsBatch_BracketFromCumulative() public {
+        // Cumulative = 1000e18 → bracket 3 (20/27/28/17/8).
+        // Two glyphs, both with seed % 10000 = 9999 → tier 4 (Breach) in bracket 3 only if
+        // weights cross at 9200 (20+27+28+17 = 92%, so 9999 > 9200 → tier 4). In bracket 0
+        // the same seed would also be tier 4. Use a seed that diverges:
+        //   roll = 9000 → bracket 0: cumulative crosses at 5000/7800/9300 → tier 3 (Rupture)
+        //   roll = 9000 → bracket 3: cumulative crosses at 2000/4700/7500/9200 → tier 3
+        // Try roll = 6000:
+        //   bracket 0: 6000 > 5000, 6000 < 7800 → tier 1 (Echo)
+        //   bracket 3: 6000 > 4700, 6000 < 7500 → tier 2 (Tremor)
+        uint256[] memory words = new uint256[](2);
+        words[0] = 6000;
+        words[1] = 6000;
+        _requestAndFulfillBatch(alice, 1, 1000e18, words);
+        // Both should be Tremor (tier 2) in bracket 3, not Echo (tier 1) as bracket 0 would give.
+        assertEq(glyphs.getGlyphData(1).tier, 2);
+        assertEq(glyphs.getGlyphData(2).tier, 2);
     }
 
     // ── Glyph Count Tracking ─────────────────────────────────────────────────
@@ -409,12 +508,12 @@ contract EldritchGlyphsTest is Test {
     // ── Full Lifecycle ───────────────────────────────────────────────────────
 
     function test_FullLifecycle() public {
-        // 1. Engine requests glyph for alice
+        // 1. Engine requests a single-glyph batch for alice
         vm.prank(engine);
-        uint256 requestId = glyphs.requestGlyph(alice, 1, 1e18);
+        uint256 requestId = glyphs.requestBatch(alice, 1, 1, 1e18);
 
         // 2. Pending state exists
-        (address recipient, , , bool fulfilled) = glyphs.pendingGlyphs(requestId);
+        (address recipient, , , , bool fulfilled) = glyphs.pendingGlyphs(requestId);
         assertEq(recipient, alice);
         assertFalse(fulfilled);
         assertEq(glyphs.glyphCount(alice), 0);
@@ -425,7 +524,7 @@ contract EldritchGlyphsTest is Test {
         // 4. Glyph is minted
         assertEq(glyphs.balanceOf(alice, 1), 1);
         assertEq(glyphs.glyphCount(alice), 1);
-        (, , , fulfilled) = glyphs.pendingGlyphs(requestId);
+        (, , , , fulfilled) = glyphs.pendingGlyphs(requestId);
         assertTrue(fulfilled);
 
         // 5. Glyph data is stored

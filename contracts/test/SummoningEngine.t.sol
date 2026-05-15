@@ -10,9 +10,34 @@ import "../src/interfaces/IEldritchGlyphs.sol";
 /// @dev Minimal mock so SummoningEngine tests don't need full VRF stack.
 contract MockGlyphs is IEldritchGlyphs {
     uint256 public nextRequestId = 1;
+    uint256 public requestBatchCallCount;
 
-    function requestGlyph(address, uint256, uint256) external returns (uint256 requestId) {
+    struct LastCall {
+        address recipient;
+        uint256 epochId;
+        uint256 numGlyphs;
+        uint256 cumulativeContribution;
+    }
+
+    LastCall public lastCall;
+
+    /// @dev If set to true, requestBatch reverts (simulates VRF down / coordinator failure).
+    bool public shouldRevert;
+
+    function setShouldRevert(bool v) external {
+        shouldRevert = v;
+    }
+
+    function requestBatch(
+        address recipient,
+        uint256 epochId,
+        uint256 numGlyphs,
+        uint256 cumulativeContribution
+    ) external returns (uint256 requestId) {
+        if (shouldRevert) revert("mock: VRF unavailable");
         requestId = nextRequestId++;
+        requestBatchCallCount++;
+        lastCall = LastCall(recipient, epochId, numGlyphs, cumulativeContribution);
     }
 
     function getGlyphData(uint256) external pure returns (GlyphData memory) {
@@ -328,6 +353,237 @@ contract SummoningEngineTest is Test {
         assertEq(engine.getContributors(1).length, 1);
     }
 
+    // ── commitRitual: VRF decoupling + lifetimeContribution ──────────────────
+
+    function test_CommitRitual_DoesNotCallGlyphs() public {
+        // C-01 fix: sacrifice no longer triggers a VRF request. The MockGlyphs counter
+        // would tick on requestBatch — assert it stays at zero throughout the Ritual phase.
+        _startAndWarpToRitual();
+        vm.prank(alice); engine.commitRitual(50e18);
+        vm.warp(block.timestamp + engine.SACRIFICE_COOLDOWN() + 1);
+        vm.prank(alice); engine.commitRitual(100e18);
+        vm.warp(block.timestamp + engine.SACRIFICE_COOLDOWN() + 1);
+        vm.prank(bob);   engine.commitRitual(1_000e18);
+
+        assertEq(mockGlyphs.requestBatchCallCount(), 0);
+    }
+
+    function test_CommitRitual_UpdatesLifetimeContribution() public {
+        _startAndWarpToRitual();
+
+        assertEq(engine.lifetimeContribution(alice), 0);
+
+        vm.prank(alice); engine.commitRitual(50e18);
+        assertEq(engine.lifetimeContribution(alice), 50e18);
+
+        vm.warp(block.timestamp + engine.SACRIFICE_COOLDOWN() + 1);
+        vm.prank(alice); engine.commitRitual(75e18);
+        assertEq(engine.lifetimeContribution(alice), 125e18);
+    }
+
+    function test_CommitRitual_LifetimePersistsAcrossEpochs() public {
+        // Lifetime contribution accumulates across epochs even when each epoch's contribution
+        // never crosses the 100-RITUAL glyph threshold — this is what powers the Initiate rank.
+        _startAndWarpToRitual();
+        vm.prank(alice); engine.commitRitual(50e18);
+        _resolve();
+
+        vm.prank(owner);
+        engine.startEpoch(OLD_ONE_ID, THRESHOLD);
+        vm.warp(block.timestamp + engine.GATHERING_DURATION());
+
+        vm.prank(alice); engine.commitRitual(60e18);
+
+        // Per-epoch contribution resets, lifetime accumulates.
+        assertEq(engine.getContribution(2, alice), 60e18);
+        assertEq(engine.lifetimeContribution(alice), 110e18);
+    }
+
+    // ── claimGlyphs ──────────────────────────────────────────────────────────
+
+    function test_ClaimGlyphs_Reverts_EpochNotResolved() public {
+        _startAndWarpToRitual();
+        vm.prank(alice); engine.commitRitual(100e18);
+
+        vm.prank(alice);
+        vm.expectRevert(SummoningEngine.SummoningEngine__EpochNotResolved.selector);
+        engine.claimGlyphs(1);
+    }
+
+    function test_ClaimGlyphs_Reverts_BelowThreshold() public {
+        // 50 RITUAL contribution → 0 glyphs earned → revert NoGlyphsEarned.
+        _startAndWarpToRitual();
+        vm.prank(alice); engine.commitRitual(50e18);
+        _resolve();
+
+        vm.prank(alice);
+        vm.expectRevert(SummoningEngine.SummoningEngine__NoGlyphsEarned.selector);
+        engine.claimGlyphs(1);
+    }
+
+    function test_ClaimGlyphs_Reverts_NoContribution() public {
+        _startAndWarpToRitual();
+        _resolve();
+
+        vm.prank(alice);
+        vm.expectRevert(SummoningEngine.SummoningEngine__NoGlyphsEarned.selector);
+        engine.claimGlyphs(1);
+    }
+
+    function test_ClaimGlyphs_Mints_100RITUAL_OneGlyph() public {
+        _startAndWarpToRitual();
+        vm.prank(alice); engine.commitRitual(100e18);
+        _resolve();
+
+        vm.prank(alice);
+        uint256 numClaimed = engine.claimGlyphs(1);
+
+        assertEq(numClaimed, 1);
+        assertEq(mockGlyphs.requestBatchCallCount(), 1);
+        assertEq(engine.glyphsClaimedCount(1, alice), 1);
+        (address rec, uint256 epochId, uint256 numGlyphs, uint256 cum) = mockGlyphs.lastCall();
+        assertEq(rec, alice);
+        assertEq(epochId, 1);
+        assertEq(numGlyphs, 1);
+        assertEq(cum, 100e18);
+    }
+
+    function test_ClaimGlyphs_Mints_550RITUAL_FiveGlyphs() public {
+        // 550 RITUAL / 100 = 5 glyphs (integer division — the trailing 50 is ignored).
+        _startAndWarpToRitual();
+        vm.prank(alice); engine.commitRitual(550e18);
+        _resolve();
+
+        vm.prank(alice);
+        uint256 numClaimed = engine.claimGlyphs(1);
+
+        assertEq(numClaimed, 5);
+        (, , uint256 numGlyphs, uint256 cum) = mockGlyphs.lastCall();
+        assertEq(numGlyphs, 5);
+        assertEq(cum, 550e18);
+    }
+
+    function test_ClaimGlyphs_BracketFromCumulative_NotPerCall() public {
+        // 100 splits of 10 RITUAL each → cumulative = 1000 RITUAL. Bracket should be from
+        // cumulative (1000 → bracket 3), NOT from any single sacrifice (10 → bracket 1).
+        _startAndWarpToRitual();
+        for (uint256 i = 0; i < 100; i++) {
+            vm.prank(alice); engine.commitRitual(10e18);
+            vm.warp(block.timestamp + engine.SACRIFICE_COOLDOWN() + 1);
+        }
+        _resolve();
+
+        vm.prank(alice);
+        engine.claimGlyphs(1);
+
+        (, , , uint256 cum) = mockGlyphs.lastCall();
+        assertEq(cum, 1000e18); // bracket 3 territory — the glyphs contract reads this and brackets
+    }
+
+    function test_ClaimGlyphs_OneVRFRequestRegardlessOfSplit() public {
+        // 1000 RITUAL in one sacrifice → 10 glyphs → 1 VRF request.
+        // 1000 RITUAL across many sacrifices → 10 glyphs → 1 VRF request.
+        // Each path must produce exactly ONE requestBatch call.
+
+        // Path A: single sacrifice
+        _startAndWarpToRitual();
+        vm.prank(alice); engine.commitRitual(1000e18);
+        _resolve();
+        vm.prank(alice); engine.claimGlyphs(1);
+        uint256 callsAfterA = mockGlyphs.requestBatchCallCount();
+
+        // Path B: 10 sacrifices of 100 each, fresh epoch + wallet
+        vm.prank(owner);
+        engine.startEpoch(OLD_ONE_ID, THRESHOLD);
+        vm.warp(block.timestamp + engine.GATHERING_DURATION());
+        for (uint256 i = 0; i < 10; i++) {
+            vm.prank(bob); engine.commitRitual(100e18);
+            vm.warp(block.timestamp + engine.SACRIFICE_COOLDOWN() + 1);
+        }
+        _resolve();
+        vm.prank(bob); engine.claimGlyphs(2);
+
+        // Each claim emitted exactly one requestBatch call.
+        assertEq(callsAfterA, 1);
+        assertEq(mockGlyphs.requestBatchCallCount(), 2);
+    }
+
+    function test_ClaimGlyphs_PerEpochReset_NoCarryOver() public {
+        // Wallet contributes 50 RITUAL in epoch 1 and 60 RITUAL in epoch 2. Cumulative across
+        // epochs is 110, but per-epoch is 50 / 60 — neither crosses 100. Both claims revert.
+        _startAndWarpToRitual();
+        vm.prank(alice); engine.commitRitual(50e18);
+        _resolve();
+
+        vm.prank(alice);
+        vm.expectRevert(SummoningEngine.SummoningEngine__NoGlyphsEarned.selector);
+        engine.claimGlyphs(1);
+
+        vm.prank(owner);
+        engine.startEpoch(OLD_ONE_ID, THRESHOLD);
+        vm.warp(block.timestamp + engine.GATHERING_DURATION());
+        vm.prank(alice); engine.commitRitual(60e18);
+        _resolve();
+
+        vm.prank(alice);
+        vm.expectRevert(SummoningEngine.SummoningEngine__NoGlyphsEarned.selector);
+        engine.claimGlyphs(2);
+
+        // No VRF requests were ever made.
+        assertEq(mockGlyphs.requestBatchCallCount(), 0);
+    }
+
+    function test_ClaimGlyphs_CapsAt50PerCall() public {
+        // 5100 RITUAL = 51 glyphs earned. First claim caps at 50, second mints the remaining 1.
+        _startAndWarpToRitual();
+        vm.prank(alice); engine.commitRitual(5100e18);
+        _resolve();
+
+        vm.prank(alice);
+        uint256 first = engine.claimGlyphs(1);
+        assertEq(first, 50);
+        assertEq(engine.glyphsClaimedCount(1, alice), 50);
+
+        vm.prank(alice);
+        uint256 second = engine.claimGlyphs(1);
+        assertEq(second, 1);
+        assertEq(engine.glyphsClaimedCount(1, alice), 51);
+
+        // Third call: nothing left to claim → revert.
+        vm.prank(alice);
+        vm.expectRevert(SummoningEngine.SummoningEngine__NoGlyphsEarned.selector);
+        engine.claimGlyphs(1);
+
+        // Two VRF requests (one per batch).
+        assertEq(mockGlyphs.requestBatchCallCount(), 2);
+    }
+
+    function test_ClaimGlyphs_EmitsEvent() public {
+        _startAndWarpToRitual();
+        vm.prank(alice); engine.commitRitual(300e18);
+        _resolve();
+
+        vm.expectEmit(true, true, false, true);
+        emit SummoningEngine.GlyphsClaimRequested(1, alice, 3, 300e18);
+        vm.prank(alice);
+        engine.claimGlyphs(1);
+    }
+
+    function test_ClaimGlyphs_AfterClaimReward_StillWorks() public {
+        // Order independence: user can call claimReward and claimGlyphs in either order.
+        _startAndWarpToRitual();
+        vm.prank(alice); engine.commitRitual(200e18);
+        _resolve();
+
+        vm.prank(alice); engine.claimReward(1);
+        // Contribution must still be readable for claimGlyphs.
+        assertEq(engine.getContribution(1, alice), 200e18);
+
+        vm.prank(alice);
+        uint256 n = engine.claimGlyphs(1);
+        assertEq(n, 2);
+    }
+
     // ── resolveEpoch ─────────────────────────────────────────────────────────
 
     function test_ResolveEpoch_SuccessWhenThresholdMet() public {
@@ -504,7 +760,10 @@ contract SummoningEngineTest is Test {
         engine.claimReward(1);
     }
 
-    function test_ClaimReward_ZeroesContribution() public {
+    function test_ClaimReward_PreservesContribution() public {
+        // Under the batched-claim design, contributions are preserved after claimReward
+        // (claimGlyphs still needs to read them). The new rewardClaimed flag prevents
+        // double-claims.
         _startAndWarpToRitual();
         vm.prank(alice);
         engine.commitRitual(MIN);
@@ -513,7 +772,8 @@ contract SummoningEngineTest is Test {
         vm.prank(alice);
         engine.claimReward(1);
 
-        assertEq(engine.getContribution(1, alice), 0);
+        assertEq(engine.getContribution(1, alice), MIN);
+        assertTrue(engine.rewardClaimed(1, alice));
     }
 
     function test_ClaimReward_Reverts_EpochNotResolved() public {
@@ -558,8 +818,11 @@ contract SummoningEngineTest is Test {
         vm.prank(alice); engine.claimReward(1);
         vm.prank(bob);   engine.claimReward(1);
 
-        assertEq(engine.getContribution(1, alice), 0);
-        assertEq(engine.getContribution(1, bob), 0);
+        assertTrue(engine.rewardClaimed(1, alice));
+        assertTrue(engine.rewardClaimed(1, bob));
+        // Contributions preserved for claimGlyphs eligibility:
+        assertEq(engine.getContribution(1, alice), MIN);
+        assertEq(engine.getContribution(1, bob), MIN * 2);
     }
 
     // ── nextThreshold ────────────────────────────────────────────────────────

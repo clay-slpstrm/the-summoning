@@ -10,9 +10,13 @@ import "./interfaces/IEldritchGlyphs.sol";
 
 /// @title SummoningEngine
 /// @notice Core gameplay contract. Manages epoch lifecycle: Gathering → Ritual → Resolved.
-///         Players burn $RITUAL via commitRitual during the Ritual phase.
-///         Each sacrifice triggers Chainlink VRF via EldritchGlyphs to mint an on-chain glyph NFT.
-///         After resolution, participants claim ERC-1155 artifact rewards.
+///         Players burn $RITUAL via commitRitual during the Ritual phase — sacrifices are
+///         pure burns: they accumulate epoch contribution and lifetime contribution, but
+///         issue no VRF requests and mint no glyphs.
+///         After the epoch resolves, participants call claimGlyphs(epochId) to batch-mint
+///         one glyph per GLYPH_UNIT of epoch contribution (one VRF request per call, capped
+///         at MAX_GLYPHS_PER_CLAIM). Separately, claimReward(epochId) mints the ERC-1155
+///         artifact for the wallet's tier.
 ///         Implements Chainlink Automation for automatic epoch resolution.
 contract SummoningEngine is Ownable, ReentrancyGuard, AutomationCompatibleInterface {
 
@@ -41,7 +45,8 @@ contract SummoningEngine is Ownable, ReentrancyGuard, AutomationCompatibleInterf
     uint256 public currentEpochId;
     mapping(uint256 => Epoch) public epochs;
 
-    /// @dev epochId => wallet => amount committed (zeroed on claim to prevent double-claim)
+    /// @dev epochId => wallet => total $RITUAL burned by this wallet for this epoch.
+    ///      Persists after claims (used by claimGlyphs for qualification + bracket).
     mapping(uint256 => mapping(address => uint256)) public contributions;
 
     /// @dev epochId => contributor addresses (for reward distribution)
@@ -50,11 +55,22 @@ contract SummoningEngine is Ownable, ReentrancyGuard, AutomationCompatibleInterf
     /// @dev wallet => last sacrifice timestamp (for cooldown enforcement)
     mapping(address => uint256) public lastSacrificeTime;
 
+    /// @dev wallet => total $RITUAL ever burned across all epochs (powers the Initiate cult rank)
+    mapping(address => uint256) public lifetimeContribution;
+
+    /// @dev epochId => wallet => artifact-reward double-claim guard
+    mapping(uint256 => mapping(address => bool)) public rewardClaimed;
+
+    /// @dev epochId => wallet => number of glyphs already claimed (for the 50-per-call cap)
+    mapping(uint256 => mapping(address => uint256)) public glyphsClaimedCount;
+
     // ── Constants ────────────────────────────────────────────────────────────
 
     uint256 public constant GATHERING_DURATION    = 48 hours;
     uint256 public constant RITUAL_DURATION       = 24 hours;
-    uint256 public constant MIN_SACRIFICE         = 1e18;     // 1 $RITUAL minimum — low entry barrier; tier weight scales with amount via bracketing in EldritchGlyphs
+    uint256 public constant MIN_SACRIFICE         = 1e18;     // 1 $RITUAL minimum — low-barrier participation
+    uint256 public constant GLYPH_UNIT            = 100e18;   // 100 $RITUAL per glyph earned (and qualification threshold)
+    uint256 public constant MAX_GLYPHS_PER_CLAIM  = 50;       // VRF callback gas safety; whales claim in multiple batches
     uint256 public constant SACRIFICE_COOLDOWN    = 30;       // seconds between sacrifices per wallet
     uint256 public constant FAILURE_REDUCTION_BPS = 2000;    // 20% threshold reduction on failure
     uint256 public constant ESCALATION_BPS        = 13000;   // 1.3× threshold increase on success
@@ -71,7 +87,12 @@ contract SummoningEngine is Ownable, ReentrancyGuard, AutomationCompatibleInterf
     );
     event EpochResolved(uint256 indexed epochId, bool successful, uint256 totalBurned);
     event RewardClaimed(uint256 indexed epochId, address indexed wallet, uint256 tierId);
-    event GlyphRequestFailed(uint256 indexed epochId, address indexed wallet, bytes reason);
+    event GlyphsClaimRequested(
+        uint256 indexed epochId,
+        address indexed wallet,
+        uint256 numGlyphs,
+        uint256 cumulativeContribution
+    );
 
     // ── Errors ───────────────────────────────────────────────────────────────
 
@@ -84,6 +105,7 @@ contract SummoningEngine is Ownable, ReentrancyGuard, AutomationCompatibleInterf
     error SummoningEngine__ZeroAddress();
     error SummoningEngine__ZeroThreshold();
     error SummoningEngine__NoActiveEpoch();
+    error SummoningEngine__NoGlyphsEarned();
 
     // ── Constructor ──────────────────────────────────────────────────────────
 
@@ -136,8 +158,9 @@ contract SummoningEngine is Ownable, ReentrancyGuard, AutomationCompatibleInterf
     // ── Core Gameplay ────────────────────────────────────────────────────────
 
     /// @notice Burn $RITUAL tokens to participate in the current epoch's summoning ritual.
-    ///         Tokens are burned immediately. A Chainlink VRF request is sent to EldritchGlyphs
-    ///         to mint a provably fair glyph NFT for the caller.
+    ///         Tokens are burned immediately. Contribution and lifetime totals are updated.
+    ///         No VRF request is issued and no glyphs are minted — glyph minting is deferred
+    ///         to claimGlyphs(epochId) after the epoch resolves.
     ///         Caller must have approved this contract for at least `amount` $RITUAL.
     /// @param amount Token amount (18 decimals) to sacrifice. Must be >= MIN_SACRIFICE.
     function commitRitual(uint256 amount) external nonReentrant {
@@ -166,17 +189,44 @@ contract SummoningEngine is Ownable, ReentrancyGuard, AutomationCompatibleInterf
         }
         contributions[id][msg.sender] += amount;
         epoch.totalCommitted += amount;
+        lifetimeContribution[msg.sender] += amount;
 
         // Burn tokens — caller must have approved this contract
         ritualToken.burnFrom(msg.sender, amount);
 
         emit RitualSacrifice(id, msg.sender, amount, epoch.totalCommitted);
+    }
 
-        // Request glyph mint via Chainlink VRF — non-blocking so VRF outage doesn't halt sacrifices.
-        // The amount is passed so the glyph contract can select the tier-weight bracket.
-        try glyphs.requestGlyph(msg.sender, id, amount) {} catch (bytes memory reason) {
-            emit GlyphRequestFailed(id, msg.sender, reason);
-        }
+    /// @notice Claim glyph NFTs earned for a resolved epoch. Issues one VRF request returning
+    ///         `numClaimed` random words; the EldritchGlyphs contract mints one glyph per word,
+    ///         each rolled at the tier bracket selected by the wallet's cumulative contribution
+    ///         to this epoch.
+    ///         Eligibility: contributions[epochId][msg.sender] / GLYPH_UNIT must exceed the
+    ///         number of glyphs already claimed. Below 100 RITUAL contribution → no glyphs.
+    ///         Capped at MAX_GLYPHS_PER_CLAIM per call; wallets with more earned glyphs call
+    ///         again (the same VRF cost applies per batch).
+    /// @param epochId The resolved epoch to claim glyphs from.
+    /// @return numClaimed Number of glyphs requested in this call.
+    function claimGlyphs(uint256 epochId) external nonReentrant returns (uint256 numClaimed) {
+        Epoch storage epoch = epochs[epochId];
+        if (!epoch.resolved) revert SummoningEngine__EpochNotResolved();
+
+        uint256 contribution = contributions[epochId][msg.sender];
+        uint256 totalEarned = contribution / GLYPH_UNIT;
+        uint256 alreadyClaimed = glyphsClaimedCount[epochId][msg.sender];
+
+        if (totalEarned <= alreadyClaimed) revert SummoningEngine__NoGlyphsEarned();
+
+        uint256 remaining = totalEarned - alreadyClaimed;
+        numClaimed = remaining > MAX_GLYPHS_PER_CLAIM ? MAX_GLYPHS_PER_CLAIM : remaining;
+
+        // State update before external call (checks-effects-interactions + reentrancy safety)
+        glyphsClaimedCount[epochId][msg.sender] = alreadyClaimed + numClaimed;
+
+        emit GlyphsClaimRequested(epochId, msg.sender, numClaimed, contribution);
+
+        // Issues VRF request. Reverts propagate — user can retry when VRF is available again.
+        glyphs.requestBatch(msg.sender, epochId, numClaimed, contribution);
     }
 
     /// @notice Resolve the current epoch after the ritual window closes.
@@ -203,6 +253,8 @@ contract SummoningEngine is Ownable, ReentrancyGuard, AutomationCompatibleInterf
     ///         Token ID = epochId * 1000 + tierId.
     ///         tierId 0 = Shattered Ritual (failed epoch, everyone)
     ///         tierId 1 = Harbinger (top ~1%), tierId 2 = Acolyte (top ~10%), tierId 3 = Cultist
+    ///         Contribution is preserved after claim (still readable by claimGlyphs);
+    ///         double-claim is prevented by the `rewardClaimed` flag.
     /// @param epochId The epoch to claim for.
     function claimReward(uint256 epochId) external nonReentrant {
         Epoch storage epoch = epochs[epochId];
@@ -210,9 +262,9 @@ contract SummoningEngine is Ownable, ReentrancyGuard, AutomationCompatibleInterf
 
         uint256 contribution = contributions[epochId][msg.sender];
         if (contribution == 0) revert SummoningEngine__AlreadyClaimed();
+        if (rewardClaimed[epochId][msg.sender]) revert SummoningEngine__AlreadyClaimed();
 
-        // Zero out before minting (checks-effects-interactions + prevents re-entrancy double-claim)
-        contributions[epochId][msg.sender] = 0;
+        rewardClaimed[epochId][msg.sender] = true;
 
         uint256 tierId = _calculateTier(epochId, contribution, epoch.successful);
         uint256 tokenId = epochId * 1000 + tierId;

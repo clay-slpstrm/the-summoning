@@ -30,13 +30,17 @@ export const LORE_MESSAGES = [
   "An eye opens in the deep.",
 ] as const;
 
+// Cult ranks. "Initiate" sits between Uninitiated and Whisperer for wallets that
+// have sacrificed but never crossed the 100-RITUAL glyph qualification threshold
+// in any single epoch — gated on lifetimeContribution rather than glyph count.
 export const CULT_RANKS = [
   { name: "Uninitiated", minGlyphs: 0, index: 0, color: "#6B7280" },
-  { name: "Whisperer", minGlyphs: 3, index: 1, color: "#8B8B8B" },
-  { name: "Echo Walker", minGlyphs: 8, index: 2, color: "#4A9EFF" },
-  { name: "Void Touched", minGlyphs: 15, index: 3, color: "#A855F7" },
-  { name: "Rift Keeper", minGlyphs: 25, index: 4, color: "#F59E0B" },
-  { name: "Herald of the Breach", minGlyphs: 40, index: 5, color: "#EF4444" },
+  { name: "Initiate", minGlyphs: 0, index: 1, color: "#94A3B8", requiresLifetime: true },
+  { name: "Whisperer", minGlyphs: 3, index: 2, color: "#8B8B8B" },
+  { name: "Echo Walker", minGlyphs: 8, index: 3, color: "#4A9EFF" },
+  { name: "Void Touched", minGlyphs: 15, index: 4, color: "#A855F7" },
+  { name: "Rift Keeper", minGlyphs: 25, index: 5, color: "#F59E0B" },
+  { name: "Herald of the Breach", minGlyphs: 40, index: 6, color: "#EF4444" },
 ] as const;
 
 export const OLD_ONES = [
@@ -61,5 +65,7 @@ export const CONTRACT_PARAMS = {
   GATHERING_DURATION: 48 * 3600,
   RITUAL_DURATION: 24 * 3600,
   MIN_SACRIFICE: 1,
+  GLYPH_UNIT: 100,           // 100 RITUAL per glyph earned (qualification threshold + divisor)
+  MAX_GLYPHS_PER_CLAIM: 50,
   SACRIFICE_COOLDOWN: 30,
 } as const;
