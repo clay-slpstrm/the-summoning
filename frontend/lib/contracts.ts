@@ -42,6 +42,7 @@ export const MINTING_CURVE_ABI = parseAbi([
   "function mint(uint256 minTokens) payable",
   "function getCurrentPrice() view returns (uint256)",
   "function getEstimatedCost(uint256 tokenAmount) view returns (uint256)",
+  "function getTokensOut(uint256 ethIn) view returns (uint256)",
 ]);
 
 export const SUMMONING_ENGINE_ABI = parseAbi([

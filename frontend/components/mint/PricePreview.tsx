@@ -1,6 +1,6 @@
 "use client";
 
-import { useCurrentPrice } from "@/hooks/useMintingCurve";
+import { useCurrentPrice, useTokensOut } from "@/hooks/useMintingCurve";
 import { formatUnits, parseEther } from "viem";
 
 type Props = {
@@ -10,17 +10,23 @@ type Props = {
 export function PricePreview({ ethAmount }: Props) {
   const { data: currentPrice } = useCurrentPrice();
 
-  const estimatedTokens = (() => {
-    if (!currentPrice || !ethAmount || Number(ethAmount) <= 0) return null;
+  const ethWei = (() => {
+    if (!ethAmount || Number(ethAmount) <= 0) return 0n;
     try {
-      const ethWei = parseEther(ethAmount);
-      const netEth = (ethWei * 8800n) / 10000n; // deduct 12% fee
-      const tokens = (netEth * BigInt(1e18)) / currentPrice;
-      return Number(formatUnits(tokens, 18));
+      return parseEther(ethAmount);
     } catch {
-      return null;
+      return 0n;
     }
   })();
+
+  // Live tokens-out quote — mirrors the contract's integral exactly. Source of truth
+  // for the displayed "You receive" amount and the slippage-protected minTokens
+  // submitted with mint().
+  const { data: tokensOutWei } = useTokensOut(ethWei);
+  const estimatedTokens =
+    tokensOutWei !== undefined && tokensOutWei > 0n
+      ? Number(formatUnits(tokensOutWei, 18))
+      : null;
 
   const priceDisplay = currentPrice
     ? Number(formatUnits(currentPrice, 18)).toFixed(8)
@@ -53,6 +59,13 @@ export function PricePreview({ ethAmount }: Props) {
           Protocol fee
         </span>
         <span className="text-sm sm:text-base text-gray-200 font-mono">12%</span>
+      </div>
+
+      <div className="flex justify-between items-center">
+        <span className="text-[14px] sm:text-[15px] text-gray-300 tracking-[1px] sm:tracking-[2px] uppercase font-mono">
+          Max slippage
+        </span>
+        <span className="text-sm sm:text-base text-gray-200 font-mono">1%</span>
       </div>
     </div>
   );

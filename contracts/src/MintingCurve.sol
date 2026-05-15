@@ -61,6 +61,18 @@ contract MintingCurve is Ownable, ReentrancyGuard, Pausable {
         return grossCost * BPS_DENOMINATOR / (BPS_DENOMINATOR - PROTOCOL_FEE_BPS);
     }
 
+    /// @notice Exact tokens-out for a given ETH input, mirroring mint().
+    ///         Use this as the source of truth for frontend slippage protection (H-03):
+    ///         `minTokens = getTokensOut(ethIn) * 99 / 100` accepts 1% adverse drift.
+    /// @param ethIn Gross ETH input (wei). The protocol fee is deducted internally.
+    /// @return tokensOut Whole tokens (18 decimals) the caller would receive.
+    function getTokensOut(uint256 ethIn) external view returns (uint256 tokensOut) {
+        if (ethIn == 0) return 0;
+        uint256 fee = ethIn * PROTOCOL_FEE_BPS / BPS_DENOMINATOR;
+        uint256 netEth = ethIn - fee;
+        return _calcTokensOut(netEth);
+    }
+
     // ── Mutative ───────────────────────────────────────────────────────────
 
     /// @notice Mint $RITUAL tokens by sending ETH. Slippage protected via minTokens.

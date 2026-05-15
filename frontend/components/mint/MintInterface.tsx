@@ -2,7 +2,8 @@
 
 import { useState, useEffect } from "react";
 import { useAccount } from "wagmi";
-import { useMintRitual } from "@/hooks/useMintingCurve";
+import { parseEther } from "viem";
+import { useMintRitual, useTokensOut } from "@/hooks/useMintingCurve";
 import { useRitualBalance } from "@/hooks/useRitualToken";
 import { PricePreview } from "./PricePreview";
 
@@ -15,9 +16,23 @@ export function MintInterface() {
   const { mint, isPending, isConfirming, isSuccess } = useMintRitual();
   const { display: balanceDisplay, refetch } = useRitualBalance();
 
+  // Live quote for slippage protection. parseEther can throw on bad input — guard it.
+  const ethWei = (() => {
+    if (!ethAmount || Number(ethAmount) <= 0) return 0n;
+    try {
+      return parseEther(ethAmount);
+    } catch {
+      return 0n;
+    }
+  })();
+  const { data: expectedTokens } = useTokensOut(ethWei);
+
   const handleMint = () => {
     if (!ethAmount || Number(ethAmount) <= 0) return;
-    mint(ethAmount, 0n);
+    // expectedTokens may be undefined if the quote hasn't loaded yet; refuse to submit
+    // without a quote so we don't fall back to minTokens=0 (no slippage protection).
+    if (expectedTokens === undefined || expectedTokens === 0n) return;
+    mint(ethAmount, expectedTokens);
   };
 
   // Refetch balance on success and auto-reset after 4s
@@ -37,7 +52,13 @@ export function MintInterface() {
     return "Invoke the Ritual";
   };
 
-  const isDisabled = isPending || isConfirming || !ethAmount || Number(ethAmount) <= 0;
+  const isDisabled =
+    isPending ||
+    isConfirming ||
+    !ethAmount ||
+    Number(ethAmount) <= 0 ||
+    expectedTokens === undefined ||
+    expectedTokens === 0n;
 
   return (
     <div className="card space-y-4 sm:space-y-5">

@@ -378,6 +378,35 @@ contract MintingCurveTest is Test {
         assertGe(price2, price1);
     }
 
+    // ── getTokensOut (H-03 frontend MEV protection) ───────────────────────
+
+    function test_GetTokensOut_MatchesMint() public {
+        uint256 ethIn = 1 ether;
+        uint256 preview = curve.getTokensOut(ethIn);
+
+        vm.prank(alice);
+        curve.mint{ value: ethIn }(0);
+        assertEq(token.balanceOf(alice), preview);
+    }
+
+    function test_GetTokensOut_ZeroForDust() public view {
+        // C-02 boundary — anything below the first whole-token threshold returns 0.
+        assertEq(curve.getTokensOut(1e13), 0);
+    }
+
+    function test_GetTokensOut_ZeroForZeroInput() public view {
+        assertEq(curve.getTokensOut(0), 0);
+    }
+
+    function testFuzz_GetTokensOut_MatchesMint(uint256 ethIn) public {
+        ethIn = bound(ethIn, 0.001 ether, 50 ether);
+        uint256 preview = curve.getTokensOut(ethIn);
+        vm.deal(alice, ethIn);
+        vm.prank(alice);
+        curve.mint{ value: ethIn }(0);
+        assertEq(token.balanceOf(alice), preview);
+    }
+
     // ── Pausable (H-02) ──────────────────────────────────────────────────────
 
     function test_Pause_RevertsMint() public {
