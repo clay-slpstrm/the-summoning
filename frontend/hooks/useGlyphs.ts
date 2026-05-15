@@ -5,7 +5,8 @@
  * connected wallet changes. Returns loading/error state so the UI can
  * show skeletons while the fetch is in flight.
  *
- * Real-time updates arrive via WebSocketProvider which calls setRevealGlyph.
+ * Real-time updates arrive via WebSocketProvider which pushes newly-minted
+ * glyphs onto glyphStore.revealQueue for the booster-pack reveal flow.
  * On WS reconnect, WebSocketProvider re-fetches from REST to catch any
  * glyphs that arrived while disconnected.
  *

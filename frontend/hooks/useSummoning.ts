@@ -57,6 +57,24 @@ export function useClaimReward() {
   return { claimReward, hash, isPending, isConfirming, isSuccess };
 }
 
+export function useClaimGlyphs() {
+  const { writeContract, data: hash, isPending } = useWriteContract();
+  const { isLoading: isConfirming, isSuccess } = useWaitForTransactionReceipt({
+    hash,
+  });
+
+  const claimGlyphs = (epochId: bigint) => {
+    writeContract({
+      address: SUMMONING_ENGINE_ADDRESS,
+      abi: SUMMONING_ENGINE_ABI,
+      functionName: "claimGlyphs",
+      args: [epochId],
+    });
+  };
+
+  return { claimGlyphs, hash, isPending, isConfirming, isSuccess };
+}
+
 export function useApproveRitual() {
   const { writeContract, data: hash, isPending } = useWriteContract();
   const { isLoading: isConfirming, isSuccess } = useWaitForTransactionReceipt({

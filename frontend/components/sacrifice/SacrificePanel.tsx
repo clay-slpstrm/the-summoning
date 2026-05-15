@@ -1,12 +1,17 @@
 /**
- * SacrificePanel — burn $RITUAL to earn on-chain glyph NFTs.
+ * SacrificePanel — burn $RITUAL during the Ritual phase.
  *
- * Handles the full flow:
+ * After the C-01 redesign, commitRitual is a pure burn: tokens are destroyed,
+ * contribution + lifetimeContribution accumulate, and the wallet earns one
+ * glyph per 100 RITUAL of cumulative contribution to the epoch. No VRF runs
+ * during sacrifice — glyphs are batched-claimed after epoch resolution.
+ *
+ * Flow:
  *   1. Check allowance → prompt approve if needed
- *   2. commitRitual(amount) → burns tokens + triggers VRF
- *   3. Show tx status feedback
+ *   2. commitRitual(amount) → burns tokens, no VRF
+ *   3. Pending-glyphs indicator updates from the contract's contributions map
  *
- * Only visible during Ritual phase of an active epoch.
+ * Only visible during the Ritual phase of an active epoch.
  */
 
 "use client";
@@ -30,6 +35,8 @@ const QUICK_AMOUNTS = [
   { label: "1,000", value: "1000" },
 ] as const;
 
+const GLYPH_UNIT_WEI = parseEther(String(CONTRACT_PARAMS.GLYPH_UNIT));
+
 export default function SacrificePanel({ epoch }: { epoch: EpochData }) {
   const { address } = useAccount();
   const [amount, setAmount] = useState("100");
@@ -45,6 +52,16 @@ export default function SacrificePanel({ epoch }: { epoch: EpochData }) {
     abi: SUMMONING_ENGINE_ABI,
     functionName: "lastSacrificeTime",
     args: address ? [address] : undefined,
+    chainId: sepolia.id,
+    query: { enabled: !!address },
+  });
+
+  // Current epoch contribution — drives the pending-glyphs indicator.
+  const { data: contribution, refetch: refetchContribution } = useReadContract({
+    address: SUMMONING_ENGINE_ADDRESS,
+    abi: SUMMONING_ENGINE_ABI,
+    functionName: "getContribution",
+    args: address ? [BigInt(epoch.epochId), address] : undefined,
     chainId: sepolia.id,
     query: { enabled: !!address },
   });
@@ -71,12 +88,13 @@ export default function SacrificePanel({ epoch }: { epoch: EpochData }) {
     }
   }, [approveSuccess, refetchAllowance]);
 
-  // Refetch cooldown after a successful sacrifice — kicks the countdown immediately.
+  // Refetch cooldown + contribution after a successful sacrifice.
   useEffect(() => {
     if (sacrificeSuccess) {
       refetchCooldown();
+      refetchContribution();
     }
-  }, [sacrificeSuccess, refetchCooldown]);
+  }, [sacrificeSuccess, refetchCooldown, refetchContribution]);
 
   if (!address) return null;
   if (epoch.phase !== "Ritual") return null;
@@ -88,6 +106,14 @@ export default function SacrificePanel({ epoch }: { epoch: EpochData }) {
       return 0n;
     }
   })();
+
+  const currentContribution = (contribution as bigint | undefined) ?? 0n;
+  const pendingGlyphs = currentContribution / GLYPH_UNIT_WEI;
+  const contributionAfter = currentContribution + amountWei;
+  const glyphsAfter = contributionAfter / GLYPH_UNIT_WEI;
+  // RITUAL still needed to earn the next glyph beyond the post-sacrifice total.
+  const nextThresholdWei = (glyphsAfter + 1n) * GLYPH_UNIT_WEI;
+  const ritualToNext = nextThresholdWei - contributionAfter;
 
   const needsApproval = allowance !== undefined && amountWei > 0n && (allowance as bigint) < amountWei;
   const isValidAmount = amountWei >= parseEther("1"); // MIN_SACRIFICE
@@ -165,7 +191,56 @@ export default function SacrificePanel({ epoch }: { epoch: EpochData }) {
         {buttonText}
       </button>
 
-      {/* Success feedback */}
+      {/* Pending glyphs indicator — drives expectations during the Ritual window.
+          Glyphs are not minted here; they're claimable in a batch once the epoch resolves. */}
+      <div
+        className="mt-4 p-3 rounded-lg"
+        style={{
+          background: "rgba(13, 13, 21, 0.6)",
+          border: "1px solid #1e1e2e",
+        }}
+      >
+        <div className="flex justify-between items-baseline">
+          <span className="text-[12px] sm:text-[13px] tracking-[2px] uppercase font-mono text-gray-400">
+            Pending glyphs
+          </span>
+          <span className="text-base sm:text-lg font-mono text-ritual-light">
+            {pendingGlyphs.toString()}
+          </span>
+        </div>
+        <div className="flex justify-between items-baseline mt-1.5">
+          <span className="text-[11px] sm:text-[12px] tracking-[1.5px] uppercase font-mono text-gray-500">
+            Until next glyph
+          </span>
+          <span className="text-xs sm:text-sm font-mono text-gray-300">
+            {Number(formatEther(currentContribution > 0n ? (pendingGlyphs + 1n) * GLYPH_UNIT_WEI - currentContribution : GLYPH_UNIT_WEI))
+              .toLocaleString(undefined, { maximumFractionDigits: 0 })}{" "}
+            $RITUAL
+          </span>
+        </div>
+        {amountWei > 0n && (
+          <div className="flex justify-between items-baseline mt-1.5 pt-1.5 border-t border-void-border/50">
+            <span className="text-[11px] sm:text-[12px] tracking-[1.5px] uppercase font-mono text-gray-500">
+              After this sacrifice
+            </span>
+            <span className="text-xs sm:text-sm font-mono text-purple-300">
+              {glyphsAfter.toString()} glyph{glyphsAfter === 1n ? "" : "s"}
+              {ritualToNext > 0n && glyphsAfter < pendingGlyphs + 10n ? (
+                <span className="text-gray-500">
+                  {" "}
+                  ·{" "}
+                  {Number(formatEther(ritualToNext)).toLocaleString(undefined, {
+                    maximumFractionDigits: 0,
+                  })}{" "}
+                  to next
+                </span>
+              ) : null}
+            </span>
+          </div>
+        )}
+      </div>
+
+      {/* Success feedback — pure burn, no VRF channeling. */}
       {sacrificeSuccess && (
         <div
           className="text-center mt-3 py-3 rounded-lg animate-fade-in"
@@ -179,7 +254,7 @@ export default function SacrificePanel({ epoch }: { epoch: EpochData }) {
             The void accepts your offering
           </div>
           <div className="text-[14px] text-gray-400 mt-1 font-mono tracking-wider">
-            VRF requested — channeling your glyph...
+            Glyphs claimable after the ritual resolves
           </div>
         </div>
       )}

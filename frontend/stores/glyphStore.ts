@@ -33,15 +33,19 @@ type GlyphStore = {
   setGlyphs: (glyphs: GlyphData[]) => void;
   addGlyph: (glyph: GlyphData) => void;
 
-  // Pending VRF requests
+  // Pending VRF requests (claimGlyphs tx submitted, awaiting fulfillment)
   pendingGlyphs: PendingGlyph[];
   addPending: (pending: PendingGlyph) => void;
   removePending: (requestId: string) => void;
   clearPending: () => void;
 
-  // Reveal modal (gacha animation, fired on fresh mint)
-  revealGlyph: GlyphData | null;
-  setRevealGlyph: (glyph: GlyphData | null) => void;
+  // Reveal queue — batched claimGlyphs returns N glyphs; we reveal them
+  // sequentially with the same gacha animation, like opening a booster pack.
+  revealQueue: GlyphData[];
+  enqueueReveal: (glyph: GlyphData) => void;
+  enqueueRevealBatch: (glyphs: GlyphData[]) => void;
+  dequeueReveal: () => void;
+  clearRevealQueue: () => void;
 
   // Detail modal (user-initiated, opened by clicking a glyph in the collection)
   selectedGlyph: GlyphData | null;
@@ -73,9 +77,18 @@ export const useGlyphStore = create<GlyphStore>((set, get) => ({
 
   clearPending: () => set({ pendingGlyphs: [] }),
 
-  revealGlyph: null,
+  revealQueue: [],
 
-  setRevealGlyph: (glyph) => set({ revealGlyph: glyph }),
+  enqueueReveal: (glyph) =>
+    set((state) => ({ revealQueue: [...state.revealQueue, glyph] })),
+
+  enqueueRevealBatch: (glyphs) =>
+    set((state) => ({ revealQueue: [...state.revealQueue, ...glyphs] })),
+
+  dequeueReveal: () =>
+    set((state) => ({ revealQueue: state.revealQueue.slice(1) })),
+
+  clearRevealQueue: () => set({ revealQueue: [] }),
 
   selectedGlyph: null,
 

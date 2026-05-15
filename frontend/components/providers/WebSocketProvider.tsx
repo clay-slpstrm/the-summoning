@@ -40,7 +40,7 @@ const RECONNECT_DELAY = 3000;
 export function WebSocketProvider({ children }: { children: ReactNode }) {
   const { address } = useAccount();
   const wsRef = useRef<WebSocket | null>(null);
-  const setRevealGlyph = useGlyphStore((s) => s.setRevealGlyph);
+  const enqueueReveal = useGlyphStore((s) => s.enqueueReveal);
   const setGlyphs = useGlyphStore((s) => s.setGlyphs);
   const addPending = useGlyphStore((s) => s.addPending);
   const removePending = useGlyphStore((s) => s.removePending);
@@ -95,11 +95,10 @@ export function WebSocketProvider({ children }: { children: ReactNode }) {
               break;
 
             case "glyph_reveal":
-              // VRF callback — glyph minted on-chain
-              // Remove from pending (by epochId since requestId may not match)
+              // VRF callback — one glyph minted on-chain. Push it onto the queue;
+              // GlyphReveal will animate it in turn (booster-pack flow for batches).
               removePending(msg.data.requestId ?? "");
-              // Trigger reveal animation
-              setRevealGlyph(msg.data);
+              enqueueReveal(msg.data);
               break;
 
             case "epoch_update":
@@ -132,7 +131,7 @@ export function WebSocketProvider({ children }: { children: ReactNode }) {
       wsRef.current?.close();
       wsRef.current = null;
     };
-  }, [address, setRevealGlyph, setGlyphs, addPending, removePending, clearPending]);
+  }, [address, enqueueReveal, setGlyphs, addPending, removePending, clearPending]);
 
   return (
     <WSContext.Provider value={{ isConnected: !!wsRef.current }}>

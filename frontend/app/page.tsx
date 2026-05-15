@@ -13,6 +13,7 @@ import CultRankBar from "@/components/rank/CultRankBar";
 import Leaderboard from "@/components/rank/Leaderboard";
 import SacrificePanel from "@/components/sacrifice/SacrificePanel";
 import ClaimArtifact from "@/components/claim/ClaimArtifact";
+import ClaimGlyphsPanel from "@/components/claim/ClaimGlyphsPanel";
 import { useGlyphs } from "@/hooks/useGlyphs";
 import { useEpochProgress } from "@/hooks/useEpochProgress";
 import { useUIStore } from "@/stores/uiStore";
@@ -107,7 +108,10 @@ export default function Home() {
                 </p>
               </div>
             ) : epoch.phase === "Resolved" ? (
-              <ClaimArtifact epoch={epoch} />
+              <>
+                <ClaimArtifact epoch={epoch} />
+                <ClaimGlyphsPanel epoch={epoch} />
+              </>
             ) : epoch.phase === "Gathering" ? (
               <div className="card text-center py-6 space-y-2">
                 <div className="section-label">Sacrifice opens soon</div>
