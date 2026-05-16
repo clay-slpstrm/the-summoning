@@ -16,7 +16,8 @@ import "../src/ElderArtifacts.sol";
 ///   VRF_COORDINATOR            — Chainlink VRF V2.5 coordinator
 ///   VRF_SUBSCRIPTION_ID        — VRF subscription ID (uint256)
 ///   VRF_KEY_HASH               — VRF key hash (gas lane)
-///   VRF_CALLBACK_GAS_LIMIT     — gas limit for VRF callback (default: 300000)
+///   VRF_CALLBACK_GAS_LIMIT     — gas limit for VRF callback (default: 2_500_000,
+///                                sized for batched 50-glyph fulfillRandomWords)
 ///   ROYALTY_RECEIVER            — address for EIP-2981 royalties
 ///   METADATA_BASE_URI          — base URI for glyph metadata
 contract DeployGlyphs is Script {
@@ -32,7 +33,7 @@ contract DeployGlyphs is Script {
         address vrfCoordinator = vm.envAddress("VRF_COORDINATOR");
         uint256 subscriptionId = vm.envUint("VRF_SUBSCRIPTION_ID");
         bytes32 keyHash = vm.envBytes32("VRF_KEY_HASH");
-        uint32 callbackGasLimit = uint32(vm.envOr("VRF_CALLBACK_GAS_LIMIT", uint256(300_000)));
+        uint32 callbackGasLimit = uint32(vm.envOr("VRF_CALLBACK_GAS_LIMIT", uint256(2_500_000)));
 
         // Glyph config
         address royaltyReceiver = vm.envAddress("ROYALTY_RECEIVER");

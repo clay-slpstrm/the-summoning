@@ -73,7 +73,9 @@ contract SummoningEngineTest is Test {
         token      = new RitualToken(owner);
         artifacts  = new ElderArtifacts("https://example.com/{id}.json", owner);
         mockGlyphs = new MockGlyphs();
-        engine     = new SummoningEngine(address(token), address(artifacts), address(mockGlyphs), owner);
+        // Audited mainnet durations (48h gathering + 24h ritual). The constructor accepts
+        // them as immutables; Sepolia rehearsals use shorter values.
+        engine     = new SummoningEngine(address(token), address(artifacts), address(mockGlyphs), owner, 48 hours, 24 hours);
         token.setMinter(address(engine));
         artifacts.setEngine(address(engine));
         vm.stopPrank();
@@ -119,19 +121,40 @@ contract SummoningEngineTest is Test {
     function test_Constructor_RevertsOnZeroToken() public {
         vm.prank(owner);
         vm.expectRevert(SummoningEngine.SummoningEngine__ZeroAddress.selector);
-        new SummoningEngine(address(0), address(artifacts), address(mockGlyphs), owner);
+        new SummoningEngine(address(0), address(artifacts), address(mockGlyphs), owner, 48 hours, 24 hours);
     }
 
     function test_Constructor_RevertsOnZeroArtifacts() public {
         vm.prank(owner);
         vm.expectRevert(SummoningEngine.SummoningEngine__ZeroAddress.selector);
-        new SummoningEngine(address(token), address(0), address(mockGlyphs), owner);
+        new SummoningEngine(address(token), address(0), address(mockGlyphs), owner, 48 hours, 24 hours);
     }
 
     function test_Constructor_RevertsOnZeroGlyphs() public {
         vm.prank(owner);
         vm.expectRevert(SummoningEngine.SummoningEngine__ZeroAddress.selector);
-        new SummoningEngine(address(token), address(artifacts), address(0), owner);
+        new SummoningEngine(address(token), address(artifacts), address(0), owner, 48 hours, 24 hours);
+    }
+
+    function test_Constructor_RevertsOnZeroGatheringDuration() public {
+        vm.prank(owner);
+        vm.expectRevert(SummoningEngine.SummoningEngine__InvalidDuration.selector);
+        new SummoningEngine(address(token), address(artifacts), address(mockGlyphs), owner, 0, 24 hours);
+    }
+
+    function test_Constructor_RevertsOnZeroRitualDuration() public {
+        vm.prank(owner);
+        vm.expectRevert(SummoningEngine.SummoningEngine__InvalidDuration.selector);
+        new SummoningEngine(address(token), address(artifacts), address(mockGlyphs), owner, 48 hours, 0);
+    }
+
+    function test_Constructor_StoresDurations() public {
+        vm.prank(owner);
+        SummoningEngine e = new SummoningEngine(
+            address(token), address(artifacts), address(mockGlyphs), owner, 5 minutes, 7 minutes
+        );
+        assertEq(e.GATHERING_DURATION(), 5 minutes);
+        assertEq(e.RITUAL_DURATION(), 7 minutes);
     }
 
     // ── startEpoch ───────────────────────────────────────────────────────────

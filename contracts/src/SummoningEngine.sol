@@ -65,10 +65,19 @@ contract SummoningEngine is Ownable, ReentrancyGuard, Pausable, AutomationCompat
     /// @dev epochId => wallet => number of glyphs already claimed (for the 50-per-call cap)
     mapping(uint256 => mapping(address => uint256)) public glyphsClaimedCount;
 
+    // ── Immutables (per-deploy phase durations) ──────────────────────────────
+    //
+    // Durations are constructor-set rather than hard-coded to (a) enable fast Sepolia
+    // rehearsals without source/bytecode divergence (audit I-01) and (b) let mainnet
+    // ship with 48h + 24h while keeping the same compiled bytecode. The external
+    // getter signature is unchanged (auto-generated for immutables) so existing
+    // callers and tests are unaffected.
+
+    uint256 public immutable GATHERING_DURATION;
+    uint256 public immutable RITUAL_DURATION;
+
     // ── Constants ────────────────────────────────────────────────────────────
 
-    uint256 public constant GATHERING_DURATION    = 48 hours;
-    uint256 public constant RITUAL_DURATION       = 24 hours;
     uint256 public constant MIN_SACRIFICE         = 1e18;     // 1 $RITUAL minimum — low-barrier participation
     uint256 public constant GLYPH_UNIT            = 100e18;   // 100 $RITUAL per glyph earned (and qualification threshold)
     uint256 public constant MAX_GLYPHS_PER_CLAIM  = 50;       // VRF callback gas safety; whales claim in multiple batches
@@ -107,21 +116,32 @@ contract SummoningEngine is Ownable, ReentrancyGuard, Pausable, AutomationCompat
     error SummoningEngine__ZeroThreshold();
     error SummoningEngine__NoActiveEpoch();
     error SummoningEngine__NoGlyphsEarned();
+    error SummoningEngine__InvalidDuration();
 
     // ── Constructor ──────────────────────────────────────────────────────────
 
+    /// @param _gatheringDuration Seconds in the Gathering phase. Mainnet: 48 hours.
+    /// @param _ritualDuration    Seconds in the Ritual phase. Mainnet: 24 hours.
     constructor(
         address _token,
         address _artifacts,
         address _glyphs,
-        address _owner
+        address _owner,
+        uint256 _gatheringDuration,
+        uint256 _ritualDuration
     ) Ownable(_owner) {
         if (_token == address(0) || _artifacts == address(0) || _glyphs == address(0)) {
             revert SummoningEngine__ZeroAddress();
         }
+        // Guard against zero-duration deploys (would brick the lifecycle) but otherwise
+        // accept any positive values — Sepolia rehearsals use minutes, mainnet uses hours.
+        if (_gatheringDuration == 0 || _ritualDuration == 0) revert SummoningEngine__InvalidDuration();
+
         ritualToken = IRitualToken(_token);
         artifacts = IElderArtifacts(_artifacts);
         glyphs = IEldritchGlyphs(_glyphs);
+        GATHERING_DURATION = _gatheringDuration;
+        RITUAL_DURATION = _ritualDuration;
     }
 
     // ── Pause Controls (Owner) ───────────────────────────────────────────────

@@ -17,7 +17,11 @@ import "../src/EldritchGlyphs.sol";
 ///   VRF_COORDINATOR            — Chainlink VRF V2.5 coordinator (mainnet)
 ///   VRF_SUBSCRIPTION_ID        — VRF subscription ID (uint256)
 ///   VRF_KEY_HASH               — VRF key hash / gas lane
-///   VRF_CALLBACK_GAS_LIMIT     — gas limit for VRF callback (default: 300000)
+///   VRF_CALLBACK_GAS_LIMIT     — gas limit for VRF callback (default: 2_500_000)
+///                                Sized for the new batched fulfillRandomWords
+///                                (up to 50 glyphs per claim). DO NOT reduce
+///                                below ~2_500_000 unless MAX_GLYPHS_PER_REQUEST
+///                                is also lowered.
 ///   METADATA_BASE_URI          — base URI for glyph metadata (default: https://api.thesummoning.xyz/metadata/glyph/)
 contract DeployMainnet is Script {
     function run() external {
@@ -28,7 +32,7 @@ contract DeployMainnet is Script {
         address vrfCoordinator = vm.envAddress("VRF_COORDINATOR");
         uint256 subscriptionId = vm.envUint("VRF_SUBSCRIPTION_ID");
         bytes32 keyHash = vm.envBytes32("VRF_KEY_HASH");
-        uint32 callbackGasLimit = uint32(vm.envOr("VRF_CALLBACK_GAS_LIMIT", uint256(300_000)));
+        uint32 callbackGasLimit = uint32(vm.envOr("VRF_CALLBACK_GAS_LIMIT", uint256(2_500_000)));
         string memory baseURI = vm.envOr(
             "METADATA_BASE_URI",
             string("https://api.thesummoning.xyz/metadata/glyph/")
@@ -61,12 +65,17 @@ contract DeployMainnet is Script {
             multisig // royalty receiver
         );
 
-        // 5. Deploy SummoningEngine — multisig is owner
+        // 5. Deploy SummoningEngine — multisig is owner. Mainnet durations are
+        //    hard-coded here to the audited values (48h gathering + 24h ritual);
+        //    the constructor params exist so Sepolia rehearsals can use shorter
+        //    durations without diverging from committed source (audit I-01).
         SummoningEngine engine = new SummoningEngine(
             address(token),
             address(artifacts),
             address(glyphs),
-            multisig
+            multisig,
+            48 hours,
+            24 hours
         );
 
         // 6. Wire contracts — these calls require current owner permissions

@@ -1,0 +1,161 @@
+// SPDX-License-Identifier: MIT
+pragma solidity ^0.8.24;
+
+import "forge-std/Script.sol";
+import "../src/RitualToken.sol";
+import "../src/MintingCurve.sol";
+import "../src/SummoningEngine.sol";
+import "../src/ElderArtifacts.sol";
+import "../src/EldritchGlyphs.sol";
+
+/// @notice Full 5-contract redeploy to Sepolia, post-audit. Mirrors DeployMainnet but
+///         accepts an OPTIONAL `MULTISIG_ADDRESS` env var — when unset, the deployer EOA
+///         is used as owner across all contracts (faster testnet iteration; no Safe
+///         steps required between deploy and exercising the contracts).
+///
+///         Why a full redeploy: the pre-audit Sepolia contracts lack MAX_SUPPLY,
+///         Pausable, getTokensOut, claimGlyphs, lifetimeContribution, etc. We can't
+///         test the new architecture against the old bytecode.
+///
+/// Required env vars:
+///   DEPLOYER_PRIVATE_KEY       — deployer EOA private key (pays gas)
+///   VRF_COORDINATOR            — Chainlink VRF V2.5 coordinator (Sepolia: 0x9DdfaCa8183c41ad55329BdeeD9F6A8d53168B1B)
+///   VRF_SUBSCRIPTION_ID        — Sepolia VRF subscription ID (uint256)
+///   VRF_KEY_HASH               — VRF key hash / gas lane
+/// Optional env vars:
+///   MULTISIG_ADDRESS           — Safe address to use as owner. If unset, deployer EOA is used.
+///   VRF_CALLBACK_GAS_LIMIT     — default 2_500_000 (sized for 50-glyph batched fulfill)
+///   METADATA_BASE_URI          — default https://api.thesummoning.xyz/metadata/glyph/
+///   GATHERING_DURATION_SECONDS — default 300 (5 min) for fast Sepolia rehearsal
+///   RITUAL_DURATION_SECONDS    — default 300 (5 min) for fast Sepolia rehearsal
+///
+/// Usage:
+///   forge script script/DeploySepolia.s.sol:DeploySepolia \
+///     --rpc-url $SEPOLIA_RPC_URL --broadcast --verify
+contract DeploySepolia is Script {
+    struct VrfConfig {
+        address coordinator;
+        uint256 subscriptionId;
+        bytes32 keyHash;
+        uint32 callbackGasLimit;
+        string baseURI;
+    }
+
+    function run() external {
+        uint256 deployerPrivateKey = vm.envUint("DEPLOYER_PRIVATE_KEY");
+        address deployer = vm.addr(deployerPrivateKey);
+        address owner = vm.envOr("MULTISIG_ADDRESS", deployer);
+        bool usingMultisig = owner != deployer;
+
+        VrfConfig memory vrf = _loadVrfConfig();
+
+        vm.startBroadcast(deployerPrivateKey);
+
+        RitualToken token = new RitualToken(owner);
+        MintingCurve curve = new MintingCurve(address(token), owner);
+        ElderArtifacts artifacts = new ElderArtifacts(
+            "https://api.thesummoning.xyz/metadata/",
+            owner
+        );
+        EldritchGlyphs glyphs = _deployGlyphs(vrf, owner);
+
+        // Short phase durations by default so a Sepolia rehearsal completes in minutes
+        // rather than days. Override via env if you want a longer rehearsal.
+        uint256 gatheringDuration = vm.envOr("GATHERING_DURATION_SECONDS", uint256(300));
+        uint256 ritualDuration = vm.envOr("RITUAL_DURATION_SECONDS", uint256(300));
+
+        SummoningEngine engine = new SummoningEngine(
+            address(token),
+            address(artifacts),
+            address(glyphs),
+            owner,
+            gatheringDuration,
+            ritualDuration
+        );
+
+        // Wiring: EldritchGlyphs.setEngine — deployer is the current owner per ConfirmedOwner.
+        glyphs.setEngine(address(engine));
+
+        if (!usingMultisig) {
+            token.setMinter(address(curve));
+            artifacts.setEngine(address(engine));
+        } else {
+            // 2-step transfer; multisig must call acceptOwnership.
+            glyphs.transferOwnership(owner);
+        }
+
+        vm.stopBroadcast();
+
+        _logSummary(
+            deployer,
+            owner,
+            usingMultisig,
+            address(token),
+            address(curve),
+            address(artifacts),
+            address(glyphs),
+            address(engine),
+            vrf.subscriptionId
+        );
+    }
+
+    function _loadVrfConfig() internal view returns (VrfConfig memory vrf) {
+        vrf.coordinator = vm.envAddress("VRF_COORDINATOR");
+        vrf.subscriptionId = vm.envUint("VRF_SUBSCRIPTION_ID");
+        vrf.keyHash = vm.envBytes32("VRF_KEY_HASH");
+        vrf.callbackGasLimit = uint32(vm.envOr("VRF_CALLBACK_GAS_LIMIT", uint256(2_500_000)));
+        vrf.baseURI = vm.envOr(
+            "METADATA_BASE_URI",
+            string("https://api.thesummoning.xyz/metadata/glyph/")
+        );
+    }
+
+    function _deployGlyphs(VrfConfig memory vrf, address royaltyReceiver)
+        internal
+        returns (EldritchGlyphs)
+    {
+        return new EldritchGlyphs(
+            vrf.coordinator,
+            vrf.subscriptionId,
+            vrf.keyHash,
+            vrf.callbackGasLimit,
+            3, // requestConfirmations
+            vrf.baseURI,
+            royaltyReceiver
+        );
+    }
+
+    function _logSummary(
+        address deployer,
+        address owner,
+        bool usingMultisig,
+        address token,
+        address curve,
+        address artifacts,
+        address glyphs,
+        address engine,
+        uint256 subscriptionId
+    ) internal pure {
+        console.log("=== Sepolia Deployment ===");
+        console.log("Deployer:        ", deployer);
+        console.log("Owner:           ", owner);
+        console.log("Using multisig:  ", usingMultisig);
+        console.log("");
+        console.log("RitualToken:     ", token);
+        console.log("MintingCurve:    ", curve);
+        console.log("ElderArtifacts:  ", artifacts);
+        console.log("EldritchGlyphs:  ", glyphs);
+        console.log("SummoningEngine: ", engine);
+        console.log("");
+        console.log("=== POST-DEPLOY ===");
+        console.log("A. Add EldritchGlyphs as VRF consumer at vrf.chain.link (subId %s)", subscriptionId);
+        console.log("B. Run forge verify-bytecode against committed source for all 5 contracts");
+        console.log("C. Update backend/.env and frontend/.env.local with new addresses");
+        if (usingMultisig) {
+            console.log("D. From multisig: RitualToken.setMinter(MintingCurve)");
+            console.log("E. From multisig: ElderArtifacts.setEngine(SummoningEngine)");
+            console.log("F. From multisig: EldritchGlyphs.acceptOwnership()");
+        }
+        console.log("G. (Optional) Register SummoningEngine as Chainlink Automation upkeep");
+    }
+}
