@@ -41,6 +41,14 @@ contract DeploySepolia is Script {
         string baseURI;
     }
 
+    struct Deployed {
+        RitualToken token;
+        MintingCurve curve;
+        ElderArtifacts artifacts;
+        EldritchGlyphs glyphs;
+        SummoningEngine engine;
+    }
+
     function run() external {
         uint256 deployerPrivateKey = vm.envUint("DEPLOYER_PRIVATE_KEY");
         address deployer = vm.addr(deployerPrivateKey);
@@ -50,53 +58,49 @@ contract DeploySepolia is Script {
         VrfConfig memory vrf = _loadVrfConfig();
 
         vm.startBroadcast(deployerPrivateKey);
+        Deployed memory d = _deployAll(owner, vrf);
+        _wire(d, owner, usingMultisig);
+        vm.stopBroadcast();
 
-        RitualToken token = new RitualToken(owner);
-        MintingCurve curve = new MintingCurve(address(token), owner);
-        ElderArtifacts artifacts = new ElderArtifacts(
+        _logSummary(deployer, owner, usingMultisig, d, vrf.subscriptionId);
+    }
+
+    function _deployAll(address owner, VrfConfig memory vrf)
+        internal
+        returns (Deployed memory d)
+    {
+        d.token = new RitualToken(owner);
+        d.curve = new MintingCurve(address(d.token), owner);
+        d.artifacts = new ElderArtifacts(
             "https://api.thesummoning.xyz/metadata/",
             owner
         );
-        EldritchGlyphs glyphs = _deployGlyphs(vrf, owner);
+        d.glyphs = _deployGlyphs(vrf, owner);
 
-        // Short phase durations by default so a Sepolia rehearsal completes in minutes
-        // rather than days. Override via env if you want a longer rehearsal.
-        uint256 gatheringDuration = vm.envOr("GATHERING_DURATION_SECONDS", uint256(300));
-        uint256 ritualDuration = vm.envOr("RITUAL_DURATION_SECONDS", uint256(300));
+        uint256 gathering = vm.envOr("GATHERING_DURATION_SECONDS", uint256(300));
+        uint256 ritual = vm.envOr("RITUAL_DURATION_SECONDS", uint256(300));
 
-        SummoningEngine engine = new SummoningEngine(
-            address(token),
-            address(artifacts),
-            address(glyphs),
+        d.engine = new SummoningEngine(
+            address(d.token),
+            address(d.artifacts),
+            address(d.glyphs),
             owner,
-            gatheringDuration,
-            ritualDuration
+            gathering,
+            ritual
         );
+    }
 
-        // Wiring: EldritchGlyphs.setEngine — deployer is the current owner per ConfirmedOwner.
-        glyphs.setEngine(address(engine));
+    function _wire(Deployed memory d, address owner, bool usingMultisig) internal {
+        // EldritchGlyphs.setEngine — deployer is still owner per ConfirmedOwner.
+        d.glyphs.setEngine(address(d.engine));
 
         if (!usingMultisig) {
-            token.setMinter(address(curve));
-            artifacts.setEngine(address(engine));
+            d.token.setMinter(address(d.curve));
+            d.artifacts.setEngine(address(d.engine));
         } else {
             // 2-step transfer; multisig must call acceptOwnership.
-            glyphs.transferOwnership(owner);
+            d.glyphs.transferOwnership(owner);
         }
-
-        vm.stopBroadcast();
-
-        _logSummary(
-            deployer,
-            owner,
-            usingMultisig,
-            address(token),
-            address(curve),
-            address(artifacts),
-            address(glyphs),
-            address(engine),
-            vrf.subscriptionId
-        );
     }
 
     function _loadVrfConfig() internal view returns (VrfConfig memory vrf) {
@@ -129,11 +133,7 @@ contract DeploySepolia is Script {
         address deployer,
         address owner,
         bool usingMultisig,
-        address token,
-        address curve,
-        address artifacts,
-        address glyphs,
-        address engine,
+        Deployed memory d,
         uint256 subscriptionId
     ) internal pure {
         console.log("=== Sepolia Deployment ===");
@@ -141,11 +141,11 @@ contract DeploySepolia is Script {
         console.log("Owner:           ", owner);
         console.log("Using multisig:  ", usingMultisig);
         console.log("");
-        console.log("RitualToken:     ", token);
-        console.log("MintingCurve:    ", curve);
-        console.log("ElderArtifacts:  ", artifacts);
-        console.log("EldritchGlyphs:  ", glyphs);
-        console.log("SummoningEngine: ", engine);
+        console.log("RitualToken:     ", address(d.token));
+        console.log("MintingCurve:    ", address(d.curve));
+        console.log("ElderArtifacts:  ", address(d.artifacts));
+        console.log("EldritchGlyphs:  ", address(d.glyphs));
+        console.log("SummoningEngine: ", address(d.engine));
         console.log("");
         console.log("=== POST-DEPLOY ===");
         console.log("A. Add EldritchGlyphs as VRF consumer at vrf.chain.link (subId %s)", subscriptionId);

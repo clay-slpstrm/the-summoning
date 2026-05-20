@@ -33,7 +33,9 @@ contract Deploy is Script {
             address(token),
             address(artifacts),
             glyphs,
-            owner
+            owner,
+            48 hours,
+            24 hours
         );
 
         // 5. Wire contracts together

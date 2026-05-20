@@ -52,12 +52,14 @@ contract DeployGlyphs is Script {
             royaltyReceiver
         );
 
-        // 2. Redeploy SummoningEngine with glyphs reference
+        // 2. Redeploy SummoningEngine with glyphs reference (mainnet durations)
         SummoningEngine engine = new SummoningEngine(
             ritualToken,
             elderArtifacts,
             address(glyphs),
-            owner
+            owner,
+            48 hours,
+            24 hours
         );
 
         // 3. Wire: authorize engine on both artifact contracts

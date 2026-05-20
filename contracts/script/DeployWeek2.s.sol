@@ -33,7 +33,9 @@ contract DeployWeek2 is Script {
             ritualToken,
             address(artifacts),
             glyphs,
-            owner
+            owner,
+            48 hours,
+            24 hours
         );
 
         // 3. Wire: authorize engine to mint artifacts
