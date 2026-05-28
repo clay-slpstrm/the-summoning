@@ -14,6 +14,8 @@ const ARTIFACT_TIERS = [
   { id: 3, name: "Cultist",          color: "#4A9EFF", flavor: "A faithful participant in the ritual." },
 ] as const;
 
+// Mirrors SummoningEngine._calculateTier (including the M-01 sole-summoner Harbinger case).
+// Must stay in sync with contracts/src/SummoningEngine.sol.
 function predictTier(
   contribution: bigint,
   totalCommitted: bigint,
@@ -22,6 +24,7 @@ function predictTier(
 ): number {
   if (!successful) return 0;
   if (participantCount === 0) return 3;
+  if (participantCount === 1) return 1; // M-01: sole summoner → Harbinger
   const avg = totalCommitted / BigInt(participantCount);
   if (contribution >= avg * 10n) return 1;
   if (contribution >= avg * 3n) return 2;
@@ -41,6 +44,17 @@ export default function ClaimArtifact({ epoch }: { epoch: EpochData }) {
     query: { enabled: !!address && epoch.resolved },
   });
 
+  // Post-audit (C-01): contribution is no longer zeroed on claim; double-claim is
+  // guarded by this flag. Hide the panel after a successful claim even on reload.
+  const { data: alreadyClaimed, refetch: refetchClaimed } = useReadContract({
+    address: SUMMONING_ENGINE_ADDRESS,
+    abi: SUMMONING_ENGINE_ABI,
+    functionName: "rewardClaimed",
+    args: address ? [BigInt(epoch.epochId), address] : undefined,
+    chainId: sepolia.id,
+    query: { enabled: !!address && epoch.resolved },
+  });
+
   const { claimReward, isPending, isConfirming, isSuccess } = useClaimReward();
 
   const tierId =
@@ -52,8 +66,9 @@ export default function ClaimArtifact({ epoch }: { epoch: EpochData }) {
     if (isSuccess && tierId !== null) {
       setClaimedTier(tierId);
       refetch();
+      refetchClaimed();
     }
-  }, [isSuccess, tierId, refetch]);
+  }, [isSuccess, tierId, refetch, refetchClaimed]);
 
   // Gate on the on-chain `resolved` flag, not the time-derived phase.
   // The contract's getCurrentPhase() returns Resolved once block.timestamp >= ritualEnd
@@ -77,18 +92,22 @@ export default function ClaimArtifact({ epoch }: { epoch: EpochData }) {
           Artifact Claimed
         </div>
         <div className="font-heading text-2xl sm:text-3xl" style={{ color: tier.color }}>
-          {tier.name}
+          {tier.name} of {epoch.oldOneName}
         </div>
         <div className="text-sm sm:text-base text-gray-300 italic">{tier.flavor}</div>
         <div className="text-[12px] font-mono text-gray-300">
-          Token ID: <span className="text-gray-200">{tokenId}</span>
+          Epoch {epoch.epochId} · Token ID: <span className="text-gray-200">{tokenId}</span>
         </div>
       </div>
     );
   }
 
-  // No contribution → user didn't participate (or already claimed and reloaded)
+  // No contribution → user didn't participate.
   if (contribution === undefined || contribution === 0n || tierId === null) return null;
+  // Already claimed on a previous session — hide the card so we don't suggest a re-claim
+  // (which would revert on-chain with AlreadyClaimed). The within-session sticky-success
+  // path is handled above via claimedTier.
+  if (alreadyClaimed === true) return null;
 
   const tier = ARTIFACT_TIERS[tierId];
   const isBusy = isPending || isConfirming;
@@ -113,7 +132,10 @@ export default function ClaimArtifact({ epoch }: { epoch: EpochData }) {
 
       <div>
         <div className="font-heading text-xl sm:text-2xl" style={{ color: tier.color }}>
-          {tier.name}
+          {tier.name} of {epoch.oldOneName}
+        </div>
+        <div className="text-[11px] tracking-[2px] uppercase font-mono text-gray-500 mt-0.5">
+          Epoch {epoch.epochId}
         </div>
         <div className="text-sm text-gray-300 italic mt-1">{tier.flavor}</div>
       </div>
