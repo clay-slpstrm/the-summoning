@@ -16,9 +16,11 @@ const glyphMintedEvent = parseAbiItem(
   "event GlyphMinted(uint256 indexed tokenId, address indexed recipient, uint8 tier, uint8 runeIndex, uint8 loreIndex, uint256 epochId)"
 );
 
-const CHUNK_SIZE = 1000n; // public RPCs commonly cap getLogs at 1000-2000 blocks
+// Chunk size is provider-dependent. Alchemy's free tier caps eth_getLogs at 10 blocks;
+// paid tiers allow much larger. Configured via BACKFILL_CHUNK_SIZE.
+const CHUNK_SIZE = config.BACKFILL_CHUNK_SIZE;
 
-export async function backfillGlyphEvents(blockRange: number = 5000): Promise<void> {
+export async function backfillGlyphEvents(blockRange: number = config.BACKFILL_BLOCK_RANGE): Promise<void> {
   const address = config.ELDRITCH_GLYPHS_ADDRESS as `0x${string}`;
   if (!address) {
     console.log("[BACKFILL] ELDRITCH_GLYPHS_ADDRESS not set, skipping");

@@ -44,7 +44,9 @@ server.listen(config.PORT, () => {
 
   if (config.ELDRITCH_GLYPHS_ADDRESS) {
     // Backfill any GlyphMinted events missed during downtime, then start the live watcher.
-    backfillGlyphEvents(5000)
+    // Range + chunk size come from config (BACKFILL_BLOCK_RANGE / BACKFILL_CHUNK_SIZE) so
+    // they can be tuned per RPC provider's eth_getLogs limits.
+    backfillGlyphEvents()
       .catch((err) => console.error("[BACKFILL] Failed:", err))
       .finally(() => startGlyphEventListener());
   } else {
