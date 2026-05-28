@@ -155,7 +155,7 @@ CONTRACT_PARAMS:
   RITUAL_DURATION        — 24 hours
   MIN_SACRIFICE          — 1 $RITUAL (low-barrier participation)
   GLYPH_UNIT             — 100 $RITUAL (qualification threshold + count divisor)
-  MAX_GLYPHS_PER_CLAIM   — 50 (VRF callback gas cap; whales claim in batches)
+  MAX_GLYPHS_PER_CLAIM   — 20 (sized for Chainlink V2.5's 2.5M callback gas ceiling; measured)
   SACRIFICE_COOLDOWN     — 30 seconds
   RITUAL_TOKEN_MAX_SUPPLY — 1,000,000,000 $RITUAL (1B hard cap, H-05)
 
@@ -191,7 +191,7 @@ Buttons: bg gradient(135deg, #4c1d95, #7c3aed), uppercase, tracking-widest, seri
 
 1. **Glyphs are on-chain ERC-1155 NFTs** minted by the EldritchGlyphs contract via **Chainlink VRF**. Tier, rune, and lore are provably fair random assignments. The backend is an event indexer — it does NOT assign glyphs.
 
-2. **Sacrifice does NOT mint glyphs** (post-audit, C-01). `commitRitual()` is a pure burn: it destroys $RITUAL, updates `contributions[epochId][wallet]` and `lifetimeContribution[wallet]`, and issues no VRF request. Glyphs are claimed in a batch after the epoch resolves via `claimGlyphs(epochId)`, which issues ONE VRF request returning `contributions[epochId][wallet] / GLYPH_UNIT` random words (capped at MAX_GLYPHS_PER_CLAIM=50). Below 100 RITUAL of cumulative epoch contribution → zero glyphs (Initiate rank only). Per-epoch reset is automatic (contributions are keyed by epochId; never carry over).
+2. **Sacrifice does NOT mint glyphs** (post-audit, C-01). `commitRitual()` is a pure burn: it destroys $RITUAL, updates `contributions[epochId][wallet]` and `lifetimeContribution[wallet]`, and issues no VRF request. Glyphs are claimed in a batch after the epoch resolves via `claimGlyphs(epochId)`, which issues ONE VRF request returning `contributions[epochId][wallet] / GLYPH_UNIT` random words (capped at MAX_GLYPHS_PER_CLAIM=20 — sized so the VRF callback fits under Chainlink V2.5's 2.5M gas ceiling; the original 50-cap from the audit was reduced after a Sepolia rehearsal caught a live OOG). Below 100 RITUAL of cumulative epoch contribution → zero glyphs (Initiate rank only). Per-epoch reset is automatic (contributions are keyed by epochId; never carry over).
 
 3. **Bracket is selected by cumulative epoch contribution, not per-sacrifice amount.** Splitting and concentrating produce identical glyph counts and identical odds — the H-01 incentive inversion is eliminated.
 

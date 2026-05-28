@@ -556,21 +556,26 @@ contract SummoningEngineTest is Test {
         assertEq(mockGlyphs.requestBatchCallCount(), 0);
     }
 
-    function test_ClaimGlyphs_CapsAt50PerCall() public {
-        // 5100 RITUAL = 51 glyphs earned. First claim caps at 50, second mints the remaining 1.
+    function test_ClaimGlyphs_CapsAtMaxPerCall() public {
+        // Total contribution = (cap + 1) * 100 RITUAL → (cap + 1) glyphs earned. First
+        // claim caps at MAX_GLYPHS_PER_CLAIM, second mints the remaining 1.
+        uint256 cap = engine.MAX_GLYPHS_PER_CLAIM();
+        uint256 earned = cap + 1;
+        uint256 total = earned * 100e18;
+
         _startAndWarpToRitual();
-        vm.prank(alice); engine.commitRitual(5100e18);
+        vm.prank(alice); engine.commitRitual(total);
         _resolve();
 
         vm.prank(alice);
         uint256 first = engine.claimGlyphs(1);
-        assertEq(first, 50);
-        assertEq(engine.glyphsClaimedCount(1, alice), 50);
+        assertEq(first, cap);
+        assertEq(engine.glyphsClaimedCount(1, alice), cap);
 
         vm.prank(alice);
         uint256 second = engine.claimGlyphs(1);
         assertEq(second, 1);
-        assertEq(engine.glyphsClaimedCount(1, alice), 51);
+        assertEq(engine.glyphsClaimedCount(1, alice), cap + 1);
 
         // Third call: nothing left to claim → revert.
         vm.prank(alice);

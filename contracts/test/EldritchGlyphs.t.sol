@@ -191,16 +191,18 @@ contract EldritchGlyphsTest is Test {
     }
 
     function test_RequestBatch_RevertsAboveCap() public {
+        uint256 cap = glyphs.MAX_GLYPHS_PER_REQUEST();
         vm.prank(engine);
         vm.expectRevert(IEldritchGlyphs.EldritchGlyphs__InvalidBatchSize.selector);
-        glyphs.requestBatch(alice, 1, 51, 100e18);
+        glyphs.requestBatch(alice, 1, cap + 1, 100e18);
     }
 
     function test_RequestBatch_AcceptsCapExactly() public {
+        uint256 cap = glyphs.MAX_GLYPHS_PER_REQUEST();
         vm.prank(engine);
-        uint256 requestId = glyphs.requestBatch(alice, 1, 50, 5_000e18);
+        uint256 requestId = glyphs.requestBatch(alice, 1, cap, 5_000e18);
         (, , , uint256 numGlyphs, ) = glyphs.pendingGlyphs(requestId);
-        assertEq(numGlyphs, 50);
+        assertEq(numGlyphs, cap);
     }
 
     // ── Fulfill (VRF Callback) ───────────────────────────────────────────────
@@ -307,6 +309,40 @@ contract EldritchGlyphsTest is Test {
         vm.expectEmit(true, true, false, true);
         emit IEldritchGlyphs.GlyphsBatchMinted(requestId, alice, 1, 3);
         vrfCoordinator.fulfillRandomWordsWithOverride(requestId, address(glyphs), words);
+    }
+
+    function test_Fulfill_MintsBatch_MaxBatchFitsCallbackGas() public {
+        // The Chainlink V2.5 callback gas ceiling is ~2.5M on Sepolia + mainnet for
+        // the standard lanes. fulfillRandomWords with MAX_GLYPHS_PER_REQUEST words
+        // MUST fit within that budget, otherwise the callback OOGs, the request stays
+        // stuck, and the LINK paid for the request is lost.
+        //
+        // This test asserts the worst-case fulfill stays under 2.4M (with a 100k margin)
+        // so future contract changes can't silently re-introduce the bug that Sepolia
+        // rehearsal #1 caught at the original 50-glyph cap.
+        uint256 cap = glyphs.MAX_GLYPHS_PER_REQUEST();
+        uint256[] memory words = new uint256[](cap);
+        for (uint256 i = 0; i < cap; i++) {
+            // Use distinct random words to exercise distinct storage slots / event payloads
+            words[i] = uint256(keccak256(abi.encode("maxbatch", i)));
+        }
+
+        vm.prank(engine);
+        // Use bracket 4 (≥10k RITUAL cumulative) — produces the largest event payloads
+        // for tier indices, exercising the worst-case path.
+        uint256 requestId = glyphs.requestBatch(alice, 1, cap, 10_000e18);
+
+        uint256 gasBefore = gasleft();
+        vrfCoordinator.fulfillRandomWordsWithOverride(requestId, address(glyphs), words);
+        uint256 gasUsed = gasBefore - gasleft();
+
+        emit log_named_uint("fulfill gas used (incl mock coordinator overhead)", gasUsed);
+        // 2.4M cap leaves 100k margin under Chainlink's 2.5M ceiling.
+        assertLt(gasUsed, 2_400_000, "Max-batch fulfill exceeds 2.4M gas budget");
+
+        // Sanity: all glyphs actually minted
+        assertEq(glyphs.balanceOf(alice, cap), 1, "last glyph in batch should be minted");
+        assertEq(glyphs.glyphCount(alice), cap, "glyphCount should equal MAX_GLYPHS_PER_REQUEST");
     }
 
     function test_Fulfill_MintsBatch_BracketFromCumulative() public {

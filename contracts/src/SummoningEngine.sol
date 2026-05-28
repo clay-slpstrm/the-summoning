@@ -80,7 +80,7 @@ contract SummoningEngine is Ownable, ReentrancyGuard, Pausable, AutomationCompat
 
     uint256 public constant MIN_SACRIFICE         = 1e18;     // 1 $RITUAL minimum — low-barrier participation
     uint256 public constant GLYPH_UNIT            = 100e18;   // 100 $RITUAL per glyph earned (and qualification threshold)
-    uint256 public constant MAX_GLYPHS_PER_CLAIM  = 50;       // VRF callback gas safety; whales claim in multiple batches
+    uint256 public constant MAX_GLYPHS_PER_CLAIM  = 20;       // mirrors EldritchGlyphs.MAX_GLYPHS_PER_REQUEST; sized for the 2.5M VRF callback budget
     uint256 public constant SACRIFICE_COOLDOWN    = 30;       // seconds between sacrifices per wallet
     uint256 public constant FAILURE_REDUCTION_BPS = 2000;    // 20% threshold reduction on failure
     uint256 public constant ESCALATION_BPS        = 13000;   // 1.3× threshold increase on success

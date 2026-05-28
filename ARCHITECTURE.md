@@ -349,7 +349,7 @@ contract SummoningEngine is Ownable, ReentrancyGuard, Pausable, AutomationCompat
     // Constants
     uint256 public constant MIN_SACRIFICE        = 1e18;      // 1 RITUAL — low-barrier entry
     uint256 public constant GLYPH_UNIT           = 100e18;    // 100 RITUAL per glyph (qualification + divisor)
-    uint256 public constant MAX_GLYPHS_PER_CLAIM = 50;        // VRF callback gas cap
+    uint256 public constant MAX_GLYPHS_PER_CLAIM = 20;        // mirrors EldritchGlyphs.MAX_GLYPHS_PER_REQUEST; sized for Chainlink V2.5's 2.5M ceiling
     uint256 public constant SACRIFICE_COOLDOWN   = 30;
     // ... GATHERING_DURATION, RITUAL_DURATION, FAILURE_REDUCTION_BPS, ESCALATION_BPS unchanged ...
 
@@ -602,7 +602,7 @@ On-chain tradeable glyph NFTs. Glyphs are minted in batches after epoch resoluti
 **Key design decisions**:
 - **Tradeable, not soulbound** — enables secondary market and late-joiner participation.
 - **EIP-2981 royalties** — 5% on secondary sales to treasury.
-- **Batched VRF** (C-01): `requestBatch(recipient, epochId, numGlyphs, cumulativeContribution)` issues ONE VRF request with `numWords = numGlyphs` (capped at `MAX_GLYPHS_PER_REQUEST = 50` for callback gas safety). All glyphs in a batch share the same tier bracket — derived from `cumulativeContribution`, not any single sacrifice amount.
+- **Batched VRF** (C-01): `requestBatch(recipient, epochId, numGlyphs, cumulativeContribution)` issues ONE VRF request with `numWords = numGlyphs` (capped at `MAX_GLYPHS_PER_REQUEST = 20`, sized so the worst-case fulfillRandomWords callback measured ~2.04M gas — under Chainlink V2.5's 2.5M ceiling with ~17% margin). All glyphs in a batch share the same tier bracket — derived from `cumulativeContribution`, not any single sacrifice amount.
 - **Single ERC-1155 `_mintBatch`** in the callback — one TransferBatch event, one storage update — keeps callback gas linear in `numGlyphs`. Per-glyph `GlyphMinted` events are emitted so backend indexing and per-glyph reveal animations still work.
 - **Tier weight bracketing** — `_bracket(cumulativeContribution)` selects one of 5 weight rows (10/100/1000/10000 RITUAL boundaries). Splitting and concentrating yield identical brackets (closes H-01 incentive inversion).
 - **PendingGlyph captured at request time** — VRF callback is async, so `pendingGlyphs[requestId]` records recipient, epochId, cumulativeContribution, and numGlyphs.
@@ -613,7 +613,7 @@ On-chain tradeable glyph NFTs. Glyphs are minted in batches after epoch resoluti
 
 ```solidity
 contract EldritchGlyphs is ERC1155, VRFConsumerBaseV2Plus, ERC2981 {
-    uint256 public constant MAX_GLYPHS_PER_REQUEST = 50;
+    uint256 public constant MAX_GLYPHS_PER_REQUEST = 20;
 
     struct PendingGlyph {
         address recipient;
@@ -657,7 +657,7 @@ contract EldritchGlyphs is ERC1155, VRFConsumerBaseV2Plus, ERC2981 {
 }
 ```
 
-**Note on `callbackGasLimit`**: the constructor takes it as immutable. For a 50-glyph batch the callback runs ~50 × storage writes + one `_mintBatch` — set the limit at deploy to ~2.5M on mainnet (the Sepolia test rig uses 2.5M). Estimate via `forge test --gas-report` against `test_Fulfill_MintsBatch_FiveGlyphs` scaled up.
+**Note on `callbackGasLimit`**: the constructor takes it as immutable. For a 20-glyph batch the measured callback cost is ~2.04M gas (`test_Fulfill_MintsBatch_MaxBatchFitsCallbackGas`). Deploy with `callbackGasLimit = 2_500_000` — the standard Chainlink V2.5 ceiling on Sepolia + mainnet for typical gas lanes. **History**: the original 50-glyph cap from the audit recommendation was set without a gas measurement; the first Sepolia rehearsal exposed a live OOG in the 50-batch callback (LINK lost, batch stuck). The forge test now hard-asserts the worst-case batch fits under 2.4M (100k margin) so regressions can't reintroduce the bug.
 
 **Tests** cover: batched VRF fulfillment (single + multi-glyph), double-fulfill revert, `InvalidBatchSize` boundaries (0 and 51), tier derivation boundaries, bracket-from-cumulative enforcement, per-bracket fuzz distributions (1,000 samples × 5 brackets), royalty info, glyphCount tracking on transfers, supportsInterface (ERC1155 + ERC2981).
 
@@ -1121,11 +1121,11 @@ export async function updateCultRank(wallet: string) {
 - Reads `contributions[epochId][wallet]` and `glyphsClaimedCount[epochId][wallet]` from SummoningEngine. Computes:
   - `totalEarned = contribution / 100e18` (integer division — GLYPH_UNIT)
   - `remaining = totalEarned - claimedCount`
-  - `claimableNow = min(remaining, MAX_GLYPHS_PER_CLAIM=50)`
+  - `claimableNow = min(remaining, MAX_GLYPHS_PER_CLAIM=20)`
   - `remainingAfter = max(remaining - 50, 0)`
 - Three states:
   - `0 < contribution < 100 RITUAL` → "No glyphs earned" hint; shows shortfall and the Initiate-rank note.
-  - `remaining > 0` → "Claim N Glyph[s]" button. Calls `useClaimGlyphs()` from `useSummoning.ts`. Shows the "X after" tail and the "Capped at 50 per claim — call again for the rest." footer when relevant.
+  - `remaining > 0` → "Claim N Glyph[s]" button. Calls `useClaimGlyphs()` from `useSummoning.ts`. Shows the "X after" tail and the "Capped at 20 per claim — call again for the rest." footer when relevant.
   - `remaining == 0` → sticky "Glyphs Claimed" done state.
 - On success: refetch `getContribution` + `glyphsClaimedCount` so the UI advances. The actual glyph data arrives via VRF callback → backend `glyph_reveal` WS pushes → `enqueueReveal` into `glyphStore.revealQueue` → `GlyphReveal` animates the batch booster-pack-style.
 

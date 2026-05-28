@@ -66,6 +66,6 @@ export const CONTRACT_PARAMS = {
   RITUAL_DURATION: 24 * 3600,
   MIN_SACRIFICE: 1,
   GLYPH_UNIT: 100,           // 100 RITUAL per glyph earned (qualification threshold + divisor)
-  MAX_GLYPHS_PER_CLAIM: 50,
+  MAX_GLYPHS_PER_CLAIM: 20,  // sized for Chainlink V2.5 2.5M callback gas ceiling
   SACRIFICE_COOLDOWN: 30,
 } as const;

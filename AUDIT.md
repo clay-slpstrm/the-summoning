@@ -261,6 +261,28 @@ Frontend:
 - Pack-opening reveal animation for batched glyphs
 - "Pending glyphs: N" indicator during the Ritual window
 
+#### Postmortem (2026-05-23): Cap lowered from 50 → 20
+
+The original "cap at 50 per claim" recommendation in this section was set without a gas
+measurement and turned out to be too aggressive. Sepolia rehearsal #1 exercised a 50-glyph
+claim and exposed a live VRF callback OOG:
+
+- `fulfillRandomWords` for 50 glyphs requires ~6M gas (measured: 5-glyph fulfill =
+  593k → ~100k marginal/glyph + ~80k fixed overhead, extrapolated linear).
+- `callbackGasLimit` was set to 2.5M (the Chainlink V2.5 ceiling on Sepolia/mainnet
+  for the standard 30/100 gwei lanes).
+- The callback ran out of gas mid-loop → the entire mint reverted → 0 glyphs minted,
+  LINK paid for the request was lost, AND the engine's `glyphsClaimedCount` had
+  already been incremented to 50, so the user could not retry.
+
+Fixed by lowering both `MAX_GLYPHS_PER_REQUEST` (EldritchGlyphs) and `MAX_GLYPHS_PER_CLAIM`
+(SummoningEngine) to 20. Measured 20-glyph fulfill = 2.04M gas (~17% margin under 2.5M).
+Added `test_Fulfill_MintsBatch_MaxBatchFitsCallbackGas` which hard-asserts the worst-case
+batch stays under 2.4M, so future changes can't silently regress.
+
+Lesson for future contract changes: any code path with a deterministic loop bound MUST
+have a measured gas test before the bound is fixed.
+
 ---
 
 ### C-02 — Free-Mint Extraction at Small ETH Inputs

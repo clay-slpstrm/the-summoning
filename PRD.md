@@ -220,7 +220,7 @@ Player wants another pull → Repeat
 
 ### 4.4 F4: Glyph Reveal Animation
 
-**Description**: Full-screen animated reveal of glyphs minted by `claimGlyphs(epochId)`. Because claims are batched (up to 50 glyphs from one VRF request), this is a **booster-pack flow** — N glyphs queued, revealed sequentially, each tap advancing to the next.
+**Description**: Full-screen animated reveal of glyphs minted by `claimGlyphs(epochId)`. Because claims are batched (up to 20 glyphs from one VRF request), this is a **booster-pack flow** — N glyphs queued, revealed sequentially, each tap advancing to the next.
 
 **User Story**: As a user, I want a dramatic, sequenced reveal experience when I claim my earned glyphs so opening a batch feels like ripping a pack rather than a flat list update.
 
@@ -373,7 +373,7 @@ Initiate exists because the C-01 redesign sets the glyph qualification threshold
 
 ### 4.9.5 F9.5: Claim Glyphs Panel
 
-**Description**: Batched VRF claim for the glyph NFTs the wallet earned in a resolved epoch. Renders alongside F9 Claim Artifact during the Resolved phase. Each call to `claimGlyphs(epochId)` mints up to `MAX_GLYPHS_PER_CLAIM = 50` glyphs from a single VRF request; whales call again for the next batch.
+**Description**: Batched VRF claim for the glyph NFTs the wallet earned in a resolved epoch. Renders alongside F9 Claim Artifact during the Resolved phase. Each call to `claimGlyphs(epochId)` mints up to `MAX_GLYPHS_PER_CLAIM = 20` glyphs from a single VRF request; whales call again for the next batch.
 
 **User Story**: As a contributor in a resolved epoch, I want to claim my earned glyphs in one click and watch them open like a booster pack.
 
@@ -386,7 +386,7 @@ Initiate exists because the C-01 redesign sets the glyph qualification threshold
   - `remainingAfter = max(remaining - 50, 0)`
 - **Three states**:
   - `contribution > 0` but `contribution < 100 RITUAL` → "No glyphs earned" hint, showing shortfall ($X RITUAL short of qualifying) and a note that lifetime contribution still earns the Initiate cult rank.
-  - `remaining > 0` → primary state. Shows contribution, total earned, already claimed (if > 0), and "Claim now: N (M after)". Button text: `Claim N Glyph[s]`. When `remaining > 50`, a footer reads "Capped at 50 per claim — call again for the rest."
+  - `remaining > 0` → primary state. Shows contribution, total earned, already claimed (if > 0), and "Claim now: N (M after)". Button text: `Claim N Glyph[s]`. When `remaining > 20`, a footer reads "Capped at 20 per claim — call again for the rest."
   - `remaining == 0` → "Glyphs Claimed" done state with the total count, sticky for the session.
 - Button calls `claimGlyphs(epochId)` → "Confirm in wallet…" → "Channeling…" → on success: refetch contribution + claimedCount; the queued `GlyphMinted` events fan the freshly-minted glyphs into the F4 booster-pack reveal.
 - Tier coloring: panel border #7c3aed for the active state, #94A3B8 for the below-threshold hint.
@@ -512,7 +512,7 @@ Each glyph receives one of 10 lore fragments, determined on-chain by Chainlink V
 ### 5.4 Glyph Assignment Rules
 
 - **Sacrifices are pure burns** — `commitRitual(amount)` burns RITUAL, accumulates contribution, and mints NO glyph.
-- **Glyphs are batch-claimed after epoch resolution** via `claimGlyphs(epochId)`. The function reads `contributions[epochId][wallet]` and issues ONE Chainlink VRF request returning `contributions / 100e18` random words (integer division), capped at `MAX_GLYPHS_PER_CLAIM = 50` per call.
+- **Glyphs are batch-claimed after epoch resolution** via `claimGlyphs(epochId)`. The function reads `contributions[epochId][wallet]` and issues ONE Chainlink VRF request returning `contributions / 100e18` random words (integer division), capped at `MAX_GLYPHS_PER_CLAIM = 20` per call. The cap is sized so the worst-case `fulfillRandomWords` callback fits under Chainlink V2.5's 2.5M gas ceiling (measured ~2.04M for a 20-glyph batch, ~17% margin). The original audit recommendation of 50 was reduced after a Sepolia rehearsal exposed a live callback OOG.
 - **Qualification threshold**: 100 RITUAL of cumulative-per-epoch contribution. Below that, no glyphs are minted (the wallet still earns Initiate cult rank for lifetime burn).
 - **Per-epoch reset is automatic** — `contributions` is keyed by epochId; a wallet that contributed 50 + 60 across two epochs earns zero glyphs from either.
 - **Whales claim in multiple batches**: 510 RITUAL → 5 glyphs in one call; 6,000 RITUAL → 50 in the first call, 10 in the second.

@@ -35,9 +35,20 @@ contract EldritchGlyphs is ERC1155, VRFConsumerBaseV2Plus, ERC2981, IEldritchGly
     uint8 internal constant NUM_LORE = 10;
     uint16 internal constant BPS_TOTAL = 10_000;
 
-    /// @notice Maximum glyphs mintable per VRF request. Caps callback gas.
-    ///         The engine enforces the same cap on claimGlyphs; whales claim in batches.
-    uint256 public constant MAX_GLYPHS_PER_REQUEST = 50;
+    /// @notice Maximum glyphs mintable per VRF request. Sized so a worst-case
+    ///         fulfillRandomWords call fits comfortably within the 2.5M Chainlink
+    ///         V2.5 callback gas ceiling.
+    ///
+    ///         Measured (forge --gas-report): ~100k gas per glyph (cold storage
+    ///         writes for GlyphData + ERC1155 balance map + glyphCount), plus ~80k
+    ///         fixed overhead. 20 × 100k + 80k ≈ 2.08M, ~17% margin under 2.5M.
+    ///         Whales with > 20 earned glyphs claim in multiple batches; the
+    ///         engine's MAX_GLYPHS_PER_CLAIM mirrors this value.
+    ///
+    ///         History: original audit recommendation was 50, set without
+    ///         measurement; reduced to 20 after Sepolia rehearsal #1 caught a
+    ///         live OOG in the 50-glyph callback (lost LINK, stuck batch).
+    uint256 public constant MAX_GLYPHS_PER_REQUEST = 20;
 
     // ── VRF Config (immutable) ──
 
