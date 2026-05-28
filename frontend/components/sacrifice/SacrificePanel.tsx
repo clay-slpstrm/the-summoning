@@ -46,6 +46,12 @@ export default function SacrificePanel({ epoch }: { epoch: EpochData }) {
   const { approve, isPending: isApproving, isConfirming: isApproveConfirming, isSuccess: approveSuccess } = useApproveRitual();
   const { data: allowance, refetch: refetchAllowance } = useRitualAllowance(address);
 
+  // Sticky "SACRIFICE ACCEPTED" indicator, auto-cleared after 4s so the button doesn't
+  // remain in a misleading state. wagmi's isSuccess stays true until the next tx, which
+  // (without this) leaves the button showing the success label but actually clickable
+  // after the 30s cooldown — clicking re-fired a sacrifice with the old input amount.
+  const [showSuccess, setShowSuccess] = useState(false);
+
   // Cooldown — preempt SACRIFICE_COOLDOWN (30s) on-chain revert.
   const { data: lastSacrificeTime, refetch: refetchCooldown } = useReadContract({
     address: SUMMONING_ENGINE_ADDRESS,
@@ -88,11 +94,16 @@ export default function SacrificePanel({ epoch }: { epoch: EpochData }) {
     }
   }, [approveSuccess, refetchAllowance]);
 
-  // Refetch cooldown + contribution after a successful sacrifice.
+  // Refetch cooldown + contribution after a successful sacrifice. Also flash the
+  // success indicator for 4s, mirroring MintInterface, so the button doesn't sit
+  // on "SACRIFICE ACCEPTED" indefinitely.
   useEffect(() => {
     if (sacrificeSuccess) {
       refetchCooldown();
       refetchContribution();
+      setShowSuccess(true);
+      const timer = setTimeout(() => setShowSuccess(false), 4000);
+      return () => clearTimeout(timer);
     }
   }, [sacrificeSuccess, refetchCooldown, refetchContribution]);
 
@@ -134,7 +145,7 @@ export default function SacrificePanel({ epoch }: { epoch: EpochData }) {
     if (isSacrificing) return "CONFIRM IN WALLET...";
     if (isSacrificeConfirming) return "SACRIFICING...";
     if (isCooldown) return `WAIT ${cooldownRemaining}s`;
-    if (sacrificeSuccess) return "SACRIFICE ACCEPTED";
+    if (showSuccess) return "SACRIFICE ACCEPTED";
     if (needsApproval) return "APPROVE & SACRIFICE";
     return "SACRIFICE $RITUAL";
   })();
@@ -178,14 +189,16 @@ export default function SacrificePanel({ epoch }: { epoch: EpochData }) {
         </div>
       )}
 
-      {/* Sacrifice button */}
+      {/* Sacrifice button — also disabled during the 4s "SACRIFICE ACCEPTED" flash so
+          the user doesn't accidentally re-fire a sacrifice with the previous input
+          amount before the cooldown countdown has even rendered. */}
       <button
         onClick={handleSacrifice}
-        disabled={!isValidAmount || isBusy || isCooldown}
+        disabled={!isValidAmount || isBusy || isCooldown || showSuccess}
         className="btn-sacrifice w-full mt-4"
         style={{
-          opacity: !isValidAmount || isBusy || isCooldown ? 0.5 : 1,
-          cursor: !isValidAmount || isBusy || isCooldown ? "not-allowed" : "pointer",
+          opacity: !isValidAmount || isBusy || isCooldown || showSuccess ? 0.5 : 1,
+          cursor: !isValidAmount || isBusy || isCooldown || showSuccess ? "not-allowed" : "pointer",
         }}
       >
         {buttonText}
@@ -240,8 +253,9 @@ export default function SacrificePanel({ epoch }: { epoch: EpochData }) {
         )}
       </div>
 
-      {/* Success feedback — pure burn, no VRF channeling. */}
-      {sacrificeSuccess && (
+      {/* Success feedback — pure burn, no VRF channeling. Tied to the 4s showSuccess
+          flash so banner + button label clear together. */}
+      {showSuccess && (
         <div
           className="text-center mt-3 py-3 rounded-lg animate-fade-in"
           style={{
