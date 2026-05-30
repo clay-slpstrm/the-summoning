@@ -12,7 +12,7 @@
  * booster-pack reveal queue).
  */
 
-import { createPublicClient, http, parseAbiItem } from "viem";
+import { createPublicClient, http, webSocket, parseAbiItem } from "viem";
 import { mainnet, sepolia } from "viem/chains";
 import { config } from "../config.js";
 import { handleGlyphsBatchRequested, handleGlyphMinted } from "./glyphMintHandler.js";
@@ -20,10 +20,15 @@ import { wsManager } from "./wsManager.js";
 
 const chain = config.CHAIN_ID === 1 ? mainnet : sepolia;
 
-const client = createPublicClient({
-  chain,
-  transport: http(config.RPC_URL),
-});
+// Prefer WebSocket transport when WS_RPC_URL is set: viem's watchEvent uses
+// eth_subscribe over WS, which doesn't depend on the ephemeral eth_newFilter
+// mechanism that public/free-tier HTTP RPCs (publicnode, Alchemy free) keep
+// expiring. Falls back to http(RPC_URL) when WS_RPC_URL is unset.
+const transport = config.WS_RPC_URL.startsWith("ws")
+  ? webSocket(config.WS_RPC_URL)
+  : http(config.RPC_URL);
+
+const client = createPublicClient({ chain, transport });
 
 // ── Event signatures ────────────────────────────────────────────────────────
 

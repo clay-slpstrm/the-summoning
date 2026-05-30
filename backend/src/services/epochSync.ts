@@ -9,7 +9,7 @@
  * Without this, GET /api/epochs/current always returns null.
  */
 
-import { createPublicClient, http, parseAbi, parseAbiItem } from "viem";
+import { createPublicClient, http, webSocket, parseAbi, parseAbiItem } from "viem";
 import { sepolia, mainnet } from "viem/chains";
 import { PrismaClient } from "@prisma/client";
 import { config } from "../config.js";
@@ -17,10 +17,13 @@ import { config } from "../config.js";
 const prisma = new PrismaClient();
 
 const chain = config.CHAIN_ID === 1 ? mainnet : sepolia;
-const client = createPublicClient({
-  chain,
-  transport: http(config.RPC_URL),
-});
+// Same transport-selection logic as eventListener: prefer WebSocket for watchEvent
+// stability (eth_subscribe doesn't depend on filter handles that free-tier HTTP
+// RPCs keep expiring).
+const transport = config.WS_RPC_URL.startsWith("ws")
+  ? webSocket(config.WS_RPC_URL)
+  : http(config.RPC_URL);
+const client = createPublicClient({ chain, transport });
 
 const ENGINE_ADDRESS = config.SUMMONING_ENGINE_ADDRESS as `0x${string}`;
 
