@@ -283,6 +283,47 @@ batch stays under 2.4M, so future changes can't silently regress.
 Lesson for future contract changes: any code path with a deterministic loop bound MUST
 have a measured gas test before the bound is fixed.
 
+#### Accepted residual risk (2026-06-02): stuck VRF requests have no on-chain recovery
+
+Sepolia rehearsal #2 surfaced that VRF requests can sit unfulfilled for 24h+ (Chainlink's
+"stuck" threshold) due to off-chain infrastructure issues we don't control (gas-lane node
+liveness, transient queue depth, beacon problems). When this happens to a user:
+
+- `SummoningEngine.glyphsClaimedCount[epochId][wallet]` is already incremented (advanced
+  on the engine's claimGlyphs call, before the VRF callback).
+- The VRF callback `EldritchGlyphs.fulfillRandomWords` never runs, so no glyphs mint.
+- The user cannot re-claim — the engine treats those glyphs as already claimed.
+- Chainlink V2.5 has no manual cancel function; the request sits indefinitely.
+
+We considered an on-chain recovery mechanism (timeout-based abandonment + state rollback +
+re-claim with fresh VRF request, ~60 LOC across both contracts + tests). It was evaluated
+on 2026-06-02 and **explicitly declined** for v1 launch. Reasoning:
+
+- The recovery would add new contract surface (state, functions, cross-contract calls)
+  that was not in the original audit and would not have a re-audit before launch.
+- A bad implementation of recovery could introduce new vulnerabilities (race conditions
+  between VRF fulfillment and abandonment, state-rollback griefing, reentrancy via the
+  cross-contract call path) that would be worse than the stuck-user UX problem.
+- The user experience cost of stuck requests is real but bounded — VRF on mainnet is
+  more reliable than Sepolia, and out-of-band handling (acknowledgement, support
+  response) is acceptable for v1.
+
+Operational implications accepted:
+
+- If a user's VRF request gets stuck on mainnet, there is **no on-chain recovery**.
+  Ops handles ad-hoc (acknowledgement, public communication, compensation if appropriate).
+- Backend should monitor for `GlyphsBatchRequested` events that lack a corresponding
+  `GlyphMinted` after 1 hour and alert. This gives ops early warning to investigate
+  whether it's a one-off or a systemic VRF issue.
+- Affected users do NOT lose money (LINK is only charged at fulfillment, so they pay
+  nothing for the stuck request beyond the gas of the original claim tx).
+- Affected users DO lose the glyphs they earned in that batch (in the worst case where
+  VRF never fulfills). The artifact (Harbinger/Acolyte/Cultist/Shattered) is unaffected.
+
+Reconsider this trade-off if: (a) stuck requests turn out to be common on mainnet, or
+(b) a future audit covers the recovery mechanism, or (c) launch user volume justifies
+spending engineering time on the recovery code path.
+
 ---
 
 ### C-02 — Free-Mint Extraction at Small ETH Inputs
