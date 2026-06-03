@@ -1609,8 +1609,44 @@ Step 37: Production metadata hosting — point ElderArtifacts
          or IPFS-pinned static JSON). Default deploy URI is a
          placeholder; marketplaces show lorem-ipsum if left as-is.
 Step 38: Set up domain, ENS name, SSL
-Step 39: Set up monitoring + alerting on backend (esp. event-listener
-         heartbeat — runaway-loop bug went undetected for hours)
+Step 39: Set up monitoring + alerting on backend                          ✅ implemented
+         Implemented in commit 6d1983a — three watchdogs run from index.ts:
+          a. Stuck-VRF detector (vrfMonitor.ts): persists every
+             GlyphsBatchRequested to the VrfRequest table; cron polls every
+             5 min, alerts on any request older than 1h with on-chain
+             pendingGlyphs.fulfilled=false. This is the audit decision
+             record's operational requirement (AUDIT.md C-01 postmortem,
+             2026-06-02) — no on-chain recovery for stuck claims, so ops
+             relies on this signal.
+          b. Low-LINK watchdog (vrfMonitor.ts): polls VRF subscription
+             balance every 30 min, alerts when below MIN_LINK_BALANCE
+             (default 2 LINK). 1h re-alert suppression.
+          c. Indexer heartbeat (heartbeat.ts + /api/health): event handlers
+             tick lastEventAt; GET /api/health returns 503 if lag >
+             HEALTH_MAX_LAG_MS (default 30 min) OR Postgres is down. Point
+             an external uptime monitor at this with a 5-min interval.
+
+         Pre-launch env wiring (backend/.env):
+          - ALERT_WEBHOOK_URL=<Discord incoming webhook>
+             OR TELEGRAM_BOT_TOKEN + TELEGRAM_CHAT_ID
+             (both supported; configure either, both, or neither — alerts
+             fan out to every configured channel)
+          - VRF_COORDINATOR, VRF_SUBSCRIPTION_ID (mainnet values)
+          - MIN_LINK_BALANCE (recommend 5+ LINK for mainnet at launch volume)
+          - Optionally tune VRF_STUCK_THRESHOLD_MS, HEALTH_MAX_LAG_MS
+
+         Discord setup: in any Discord channel → Edit Channel →
+         Integrations → Webhooks → New Webhook → copy URL.
+
+         Telegram setup: message @BotFather to create a bot (saves the
+         token), add the bot to a group/channel, then call
+         https://api.telegram.org/bot<TOKEN>/getUpdates to find the
+         numeric chat_id.
+
+         External uptime ping: free tier of Better Uptime / UptimeRobot
+         pointed at https://<backend>/api/health with 5-min interval and
+         alert-on-503.
+
 Step 40: Begin teaser campaign on Twitter/X
 ```
 
@@ -1643,17 +1679,21 @@ export const GLYPH_TIERS = [
   { name: 'Breach',   chance: 0.01, color: '#EF4444', symbol: '𐌄' },
 ];
 
-// Cult Ranks
+// Cult Ranks. Initiate sits between Uninitiated and Whisperer as a lateral
+// state for wallets with lifetimeContribution > 0 AND glyphCount == 0
+// (sacrificed but never crossed the 100-RITUAL glyph qualification in any
+// single epoch). See PRD §7.2.
 export const CULT_RANKS = [
-  { name: 'Uninitiated',          minGlyphs: 0  },
-  { name: 'Whisperer',            minGlyphs: 3  },
-  { name: 'Echo Walker',          minGlyphs: 8  },
-  { name: 'Void Touched',         minGlyphs: 15 },
-  { name: 'Rift Keeper',          minGlyphs: 25 },
-  { name: 'Herald of the Breach', minGlyphs: 40 },
+  { name: 'Uninitiated',          minGlyphs: 0, color: '#6B7280' },
+  { name: 'Initiate',             minGlyphs: 0, color: '#94A3B8', requiresLifetime: true },
+  { name: 'Whisperer',            minGlyphs: 3, color: '#8B8B8B' },
+  { name: 'Echo Walker',          minGlyphs: 8, color: '#4A9EFF' },
+  { name: 'Void Touched',         minGlyphs: 15, color: '#A855F7' },
+  { name: 'Rift Keeper',          minGlyphs: 25, color: '#F59E0B' },
+  { name: 'Herald of the Breach', minGlyphs: 40, color: '#EF4444' },
 ];
 
-// ERC-1155 Tier IDs
+// ERC-1155 Tier IDs (artifact tiers, per-epoch reward)
 export const TIER_IDS = {
   SHATTERED_RITUAL: 0,
   HARBINGER: 1,
@@ -1666,9 +1706,12 @@ export const CONTRACT_PARAMS = {
   BASE_PRICE: 0.0001,           // ETH per token
   SCALE_FACTOR: 100_000_000,
   PROTOCOL_FEE_BPS: 1200,       // 12%
-  GATHERING_DURATION: 48 * 3600, // 48 hours in seconds
-  RITUAL_DURATION: 24 * 3600,    // 24 hours in seconds
-  MIN_SACRIFICE: 1,              // $RITUAL tokens — tier odds scale with amount, not gated by floor
+  GATHERING_DURATION: 48 * 3600, // mainnet value — immutable, constructor-set (Sepolia uses 5 min)
+  RITUAL_DURATION:    24 * 3600, // mainnet value — immutable, constructor-set (Sepolia uses 5 min)
+  MIN_SACRIFICE: 1,              // $RITUAL — low-barrier participation
+  GLYPH_UNIT: 100,               // $RITUAL per glyph earned (qualification threshold + count divisor)
+  MAX_GLYPHS_PER_CLAIM: 20,      // VRF callback gas cap (Chainlink V2.5 ceiling ~2.5M; 20 batch = ~2.04M measured)
   SACRIFICE_COOLDOWN: 30,        // seconds
+  RITUAL_TOKEN_MAX_SUPPLY: 1_000_000_000, // 1B cap (H-05)
 };
 ```
