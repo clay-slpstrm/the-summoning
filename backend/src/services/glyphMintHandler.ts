@@ -50,18 +50,38 @@ export type GlyphMintedEvent = {
  * recipient's WebSocket so the UI can show the wait.
  */
 export async function handleGlyphsBatchRequested(
-  event: GlyphsBatchRequestedEvent
+  event: GlyphsBatchRequestedEvent & { blockNumber: number }
 ): Promise<void> {
   const wallet = event.recipient.toLowerCase();
+  const requestId = event.requestId.toString();
 
   console.log(
-    `[GLYPH] Batch requested: requestId=${event.requestId} wallet=${wallet} epoch=${event.epochId} numGlyphs=${event.numGlyphs} cumulative=${event.cumulativeContribution}`
+    `[GLYPH] Batch requested: requestId=${requestId} wallet=${wallet} epoch=${event.epochId} numGlyphs=${event.numGlyphs} cumulative=${event.cumulativeContribution}`
   );
+
+  // Persist for the stuck-VRF monitor (audit decision record, AUDIT.md C-01
+  // postmortem 2026-06-02). Idempotent: upsert in case the listener replays.
+  try {
+    await prisma.vrfRequest.upsert({
+      where: { requestId },
+      create: {
+        requestId,
+        recipient: wallet,
+        epochId: event.epochId,
+        numGlyphs: event.numGlyphs,
+        cumulativeContribution: event.cumulativeContribution.toString(),
+        blockNumber: event.blockNumber,
+      },
+      update: {}, // first-write-wins on requestedAt
+    });
+  } catch (err) {
+    console.error("[GLYPH] Failed to persist VrfRequest:", (err as Error).message);
+  }
 
   wsManager.sendToWallet(wallet, {
     type: "glyph_pending",
     data: {
-      requestId: event.requestId.toString(),
+      requestId,
       epochId: event.epochId,
       numGlyphs: event.numGlyphs,
       cumulativeContribution: event.cumulativeContribution.toString(),

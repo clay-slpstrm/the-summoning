@@ -1,10 +1,45 @@
 import type { Express } from "express";
 import { PrismaClient } from "@prisma/client";
 import { CULT_RANKS, GLYPH_TIERS, RUNE_SHAPES, LORE_MESSAGES, OLD_ONES } from "../utils/constants.js";
+import { getHeartbeat } from "../lib/heartbeat.js";
 
 const prisma = new PrismaClient();
 
+// Indexer is considered unhealthy when no event has been processed in this window
+// AND there's been on-chain activity to catch. Tunable via HEALTH_MAX_LAG_MS.
+const HEALTH_MAX_LAG_MS = Number(process.env.HEALTH_MAX_LAG_MS || 30 * 60 * 1000);
+
 export function setupRoutes(app: Express): void {
+  // ── Health (external uptime monitor) ──
+
+  app.get("/api/health", async (_req, res) => {
+    const hb = getHeartbeat();
+    let dbOk = true;
+    try {
+      // 1ms touch — verifies the Postgres connection is alive.
+      await prisma.$queryRaw`SELECT 1`;
+    } catch {
+      dbOk = false;
+    }
+
+    const lagOk = hb.ageMs < HEALTH_MAX_LAG_MS;
+    const healthy = dbOk && lagOk;
+
+    res.status(healthy ? 200 : 503).json({
+      status: healthy ? "ok" : "degraded",
+      db: dbOk ? "ok" : "down",
+      indexer: {
+        lastEventLabel: hb.lastEventLabel,
+        lastEventAt: new Date(hb.lastEventAt).toISOString(),
+        ageMs: hb.ageMs,
+        ageMinutes: Math.floor(hb.ageMs / 60_000),
+        lagThresholdMs: HEALTH_MAX_LAG_MS,
+        lagOk,
+      },
+      timestamp: new Date().toISOString(),
+    });
+  });
+
   // ── Glyph Collection ──
 
   app.get("/api/glyphs/:wallet", async (req, res) => {

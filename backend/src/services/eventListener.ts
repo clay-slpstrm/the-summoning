@@ -17,6 +17,7 @@ import { mainnet, sepolia } from "viem/chains";
 import { config } from "../config.js";
 import { handleGlyphsBatchRequested, handleGlyphMinted } from "./glyphMintHandler.js";
 import { wsManager } from "./wsManager.js";
+import { recordEvent } from "../lib/heartbeat.js";
 
 const chain = config.CHAIN_ID === 1 ? mainnet : sepolia;
 
@@ -84,6 +85,7 @@ export function startEventListener(): void {
               totalCommitted: args.totalCommitted?.toString() ?? "0",
             },
           });
+          recordEvent("RitualSacrifice");
         } catch (err) {
           console.error("[EVENTS] Error processing sacrifice event:", err);
         }
@@ -142,7 +144,9 @@ export function startGlyphEventListener(): void {
             epochId: Number(args.epochId),
             numGlyphs: Number(args.numGlyphs),
             cumulativeContribution: args.cumulativeContribution,
+            blockNumber: Number(log.blockNumber),
           });
+          recordEvent("GlyphsBatchRequested");
         } catch (err) {
           console.error("[EVENTS] Error processing GlyphsBatchRequested:", err);
         }
@@ -192,6 +196,7 @@ export function startGlyphEventListener(): void {
             txHash: log.transactionHash!,
             blockNumber: Number(log.blockNumber),
           });
+          recordEvent("GlyphMinted");
         } catch (err) {
           console.error("[EVENTS] Error processing GlyphMinted:", err);
         }

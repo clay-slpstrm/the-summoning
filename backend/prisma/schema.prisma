@@ -52,3 +52,24 @@ model EpochCache {
   participantCount Int      @default(0)
   updatedAt        DateTime @updatedAt
 }
+
+// Tracks VRF batch requests so the monitor can detect stuck ones. Engine state
+// commits glyphsClaimedCount BEFORE the VRF callback runs, so if VRF gets stuck
+// the user's glyphs are claim-committed but never minted. Audit decision record
+// (AUDIT.md C-01 postmortem, 2026-06-02) requires backend monitoring + ops alert
+// for this case since there's no on-chain recovery.
+model VrfRequest {
+  requestId              String    @id @db.VarChar(78)   // uint256 as decimal string
+  recipient              String    @db.VarChar(42)
+  epochId                Int
+  numGlyphs              Int
+  cumulativeContribution String    // BigInt as string
+  blockNumber            Int
+  requestedAt            DateTime  @default(now())
+  fulfilledAt            DateTime?
+  alerted                Boolean   @default(false)        // suppresses repeat alerts
+
+  @@index([recipient])
+  @@index([fulfilledAt])
+  @@index([alerted])
+}

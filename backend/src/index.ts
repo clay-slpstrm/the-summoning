@@ -7,6 +7,7 @@ import { wsManager } from "./services/wsManager.js";
 import { startEventListener, startGlyphEventListener } from "./services/eventListener.js";
 import { startEpochSync } from "./services/epochSync.js";
 import { backfillGlyphEvents } from "./services/backfill.js";
+import { startVrfMonitor } from "./services/vrfMonitor.js";
 import { setupRoutes } from "./api/routes.js";
 
 validateConfig();
@@ -15,7 +16,8 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 
-// Health check
+// Cheap liveness probe (always 200) — separate from /api/health which reports
+// indexer lag + DB connectivity. Useful for the simplest possible uptime checker.
 app.get("/health", (_req, res) => {
   res.json({ status: "ok", timestamp: new Date().toISOString() });
 });
@@ -52,4 +54,9 @@ server.listen(config.PORT, () => {
   } else {
     console.warn("[EVENTS] No ELDRITCH_GLYPHS_ADDRESS configured, glyph listener disabled");
   }
+
+  // Stuck-VRF + low-LINK watchdog (audit decision record, AUDIT.md C-01 postmortem).
+  // Safe to start even without ELDRITCH_GLYPHS_ADDRESS — the checks will no-op until
+  // the config is present.
+  startVrfMonitor();
 });
