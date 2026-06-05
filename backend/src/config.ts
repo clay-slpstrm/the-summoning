@@ -24,6 +24,12 @@ export const config = {
 
   // Database
   DATABASE_URL: process.env.DATABASE_URL || "postgresql://postgres:password@localhost:5432/summoning",
+
+  // Public-facing base URL — used in metadata JSON for image URLs so the same
+  // code path works in dev (http://localhost:3002) and prod (https://api.thesummoning.xyz).
+  // No trailing slash. Falls back to localhost if unset so dev "just works".
+  PUBLIC_BASE_URL:
+    (process.env.PUBLIC_BASE_URL || `http://localhost:${process.env.PORT || "3002"}`).replace(/\/$/, ""),
 } as const;
 
 // Validate required config on startup

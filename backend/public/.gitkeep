@@ -1,0 +1,3 @@
+# Forces the artifacts/{1,2,3,4,5}/ directory structure to live in git so the
+# layout doesn't get accidentally lost between machines. Actual PNGs are
+# committed when the artwork lands.
