@@ -1,6 +1,7 @@
 import type { Express } from "express";
 import express from "express";
 import path from "node:path";
+import { existsSync } from "node:fs";
 import { PrismaClient } from "@prisma/client";
 import { CULT_RANKS, GLYPH_TIERS, RUNE_SHAPES, LORE_MESSAGES, OLD_ONES } from "../utils/constants.js";
 import { getHeartbeat } from "../lib/heartbeat.js";
@@ -20,22 +21,46 @@ const HEALTH_MAX_LAG_MS = Number(process.env.HEALTH_MAX_LAG_MS || 30 * 60 * 1000
 export function setupRoutes(app: Express): void {
   // ── Images ──
   //
-  // Artifact PNGs are static: 20 files in public/artifacts/{oldOneId}/{tierId}.png.
-  // See public/artifacts/README.md for the layout. Express's static handler
-  // returns 404 if the file is missing — marketplaces fall back to JSON-only
-  // rendering until the file is added (no restart required).
+  // Artifact images are static: 20 files in public/artifacts/{oldOneId}/{tierId}.{png|jpg|jpeg|webp}.
+  // The URL is extension-agnostic (/images/artifact/{oldOneId}/{tierId}) so artists
+  // can drop in whichever format works best per image (PNG for transparency,
+  // JPEG for compressed painterly fills, WebP for both). The handler probes the
+  // supported extensions in order and serves the first match.
+  // See public/artifacts/README.md for the layout.
   //
   // Glyph SVGs are dynamic: rendered per-tokenId from the on-chain (tier, rune,
   // lore) data stored in our Glyph table. The rendered SVG is cacheable
   // indefinitely because glyph data is immutable once minted.
-  app.use(
-    "/images/artifact",
-    express.static(path.join(PUBLIC_DIR, "artifacts"), {
-      maxAge: "1d",
-      immutable: false, // art may get refreshed; let edges revalidate daily
-      fallthrough: false, // 404 on miss rather than falling to the next handler
-    }),
-  );
+
+  const ARTIFACT_EXTS = [
+    { ext: "png",  mime: "image/png" },
+    { ext: "jpg",  mime: "image/jpeg" },
+    { ext: "jpeg", mime: "image/jpeg" },
+    { ext: "webp", mime: "image/webp" },
+  ] as const;
+
+  app.get("/images/artifact/:oldOneId/:tierId", (req, res) => {
+    const oldOneId = parseInt(req.params.oldOneId);
+    const tierId = parseInt(req.params.tierId);
+    if (!Number.isFinite(oldOneId) || !Number.isFinite(tierId) ||
+        oldOneId < 1 || oldOneId > 99 || tierId < 0 || tierId > 9) {
+      res.status(400).send("invalid path");
+      return;
+    }
+
+    const dir = path.join(PUBLIC_DIR, "artifacts", String(oldOneId));
+    for (const { ext, mime } of ARTIFACT_EXTS) {
+      const filePath = path.join(dir, `${tierId}.${ext}`);
+      if (existsSync(filePath)) {
+        res.set("Content-Type", mime);
+        // Edges revalidate daily so refreshed art propagates within a day.
+        res.set("Cache-Control", "public, max-age=86400");
+        res.sendFile(filePath);
+        return;
+      }
+    }
+    res.status(404).send("artifact image not found");
+  });
 
   app.get("/images/glyph/:tokenId", async (req, res) => {
     const tokenId = parseInt(req.params.tokenId);
@@ -190,7 +215,7 @@ export function setupRoutes(app: Express): void {
     res.json({
       name: `Fragment of ${oldOne.name} — ${tierName}`,
       description: `A shard of ${oldOne.description}, pulled from beyond the veil during Epoch ${epochId}.`,
-      image: `${config.PUBLIC_BASE_URL}/images/artifact/${epochRecord?.oldOneId ?? 1}/${tierId}.png`,
+      image: `${config.PUBLIC_BASE_URL}/images/artifact/${epochRecord?.oldOneId ?? 1}/${tierId}`,
       attributes: [
         { trait_type: "Epoch", value: epochId },
         { trait_type: "Old One", value: oldOne.name },
@@ -252,7 +277,7 @@ export function setupRoutes(app: Express): void {
     res.json({
       name: `Fragment of ${oldOne.name} — ${tierName}`,
       description: `A shard of ${oldOne.description}, pulled from beyond the veil during Epoch ${epochId}.`,
-      image: `${config.PUBLIC_BASE_URL}/images/artifact/${epochRecord?.oldOneId ?? 1}/${tierId}.png`,
+      image: `${config.PUBLIC_BASE_URL}/images/artifact/${epochRecord?.oldOneId ?? 1}/${tierId}`,
       attributes: [
         { trait_type: "Epoch", value: epochId },
         { trait_type: "Old One", value: oldOne.name },

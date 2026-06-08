@@ -27,14 +27,21 @@ public/artifacts/
 
 ## Image guidelines
 
-- **Format**: PNG (preferred) or SVG (also served if `.png` is missing — see
-  `routes.ts` static handler).
+- **Format**: any of `.png`, `.jpg`, `.jpeg`, `.webp`. The metadata URL is
+  extension-agnostic (`/images/artifact/{oldOneId}/{tierId}` with no
+  extension); the handler probes the supported extensions in order and
+  serves the first match. You can mix formats per image — e.g. JPEG for
+  most, PNG for any that need transparency.
+- **Recommended choice**: JPEG (~75-85% quality) for painterly atmospheric
+  images like ours — file size is ~4× smaller than PNG with no visible
+  quality loss. PNG only if the image needs an alpha channel.
 - **Dimensions**: 1024×1024 recommended. Marketplaces accept anything from
   ~400px up; 1024 looks crisp on detail pages without ballooning file size.
 - **File size**: keep under 1 MB per image. Cloudflare will cache them
   aggressively but the first hit per edge still has to fetch from origin.
-- **Naming**: tier IDs are 0/1/2/3 — exact filenames `0.png`, `1.png`, etc.
-  No leading zeros, no other variants.
+- **Naming**: tier IDs are 0/1/2/3 — filenames are `0.<ext>`, `1.<ext>`, etc.
+  No leading zeros, no other variants. So `0.jpg`, `1.png`, `2.webp` in
+  the same directory all work.
 
 ## Tier semantics
 
