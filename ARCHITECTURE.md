@@ -1435,19 +1435,25 @@ anvil                                          # Start local node
 forge script script/Deploy.s.sol --fork-url http://localhost:8545 --broadcast
 
 # Testnet (Sepolia)
-forge script script/Deploy.s.sol \
+# Signer comes from the CLI flag, never an env var — the scripts use a bare
+# vm.startBroadcast() and read the deployer from msg.sender (--sender). Import
+# the keystore once: cast wallet import deployer --interactive
+forge script script/DeploySepolia.s.sol:DeploySepolia \
   --rpc-url $SEPOLIA_RPC_URL \
-  --private-key $DEPLOYER_KEY \
+  --account deployer --sender $DEPLOYER_ADDRESS \
   --broadcast --verify \
   --etherscan-api-key $ETHERSCAN_KEY
 
-# Mainnet (use hardware wallet / multisig)
-forge script script/Deploy.s.sol \
+# Mainnet (hardware wallet or keystore; contracts owned by the Safe multisig)
+forge script script/DeployMainnet.s.sol:DeployMainnet \
   --rpc-url $MAINNET_RPC_URL \
-  --ledger \
+  --ledger --sender $DEPLOYER_ADDRESS \
   --broadcast --verify \
   --etherscan-api-key $ETHERSCAN_KEY
 ```
+
+> Deploy scripts take the signer from `--account` / `--ledger` / `--private-key`,
+> not a `DEPLOYER_PRIVATE_KEY` env var, so the raw key never enters the environment.
 
 ### 8.2 Backend
 
@@ -1459,10 +1465,18 @@ forge script script/Deploy.s.sol \
 
 ### 8.3 Frontend
 
-- **Hosting**: Vercel (Next.js native)
-- **Domain**: thesummoning.xyz → Vercel, thesummoning.eth → ENS content hash
-- **CDN**: Vercel Edge Network (automatic)
-- **IPFS fallback**: Pin static export to IPFS for censorship resistance
+- **Hosting**: Cloudflare Pages (static export). The app is fully client-rendered —
+  every route is `"use client"`, with no server components, API routes, or SSR — so
+  `next build` with `output: "export"` (set in `next.config.js`) emits a static `out/`
+  dir. Pages config: build command `npm run build`, output dir `out`. No edge adapter
+  (`@cloudflare/next-on-pages`) needed since there are no server-rendered routes.
+- **Why Cloudflare over Vercel**: single vendor with the DNS + `api` subdomain (already
+  on Cloudflare), and the root domain is served proxied (orange-cloud) so it gets
+  Cloudflare's CDN + DDoS protection and automatic SSL. Contrast the `api` record, which
+  must stay DNS-only (grey-cloud) for Render's Let's Encrypt issuance.
+- **Domain**: thesummoning.xyz → Cloudflare Pages, thesummoning.eth → ENS content hash
+- **CDN**: Cloudflare global edge network (automatic when proxied)
+- **IPFS fallback**: Pin the `out/` static export to IPFS for censorship resistance
 
 ---
 
@@ -1498,7 +1512,9 @@ NEXT_PUBLIC_SUMMONING_ENGINE_ADDRESS=0x...
 NEXT_PUBLIC_ELDER_ARTIFACTS_ADDRESS=0x...
 
 # ── Deployment ──
-DEPLOYER_PRIVATE_KEY=          # NEVER commit this. Use hardware wallet for mainnet.
+# Deploy scripts take the signer from a CLI flag (--account / --ledger), NOT this
+# env var. Prefer a keystore (cast wallet import) or hardware wallet; avoid raw keys.
+DEPLOYER_ADDRESS=             # deployer EOA address, passed via --sender (pays gas, not owner)
 ETHERSCAN_API_KEY=
 ALCHEMY_API_KEY=
 
@@ -1608,7 +1624,11 @@ Step 37: Production metadata hosting — point ElderArtifacts
          setBaseURI to a stable HTTPS endpoint (api.thesummoning.xyz
          or IPFS-pinned static JSON). Default deploy URI is a
          placeholder; marketplaces show lorem-ipsum if left as-is.
-Step 38: Set up domain, ENS name, SSL
+Step 38: Deploy frontend to Cloudflare Pages (static export, build
+         `npm run build`, output `out`); point thesummoning.xyz root
+         at it (proxied/orange-cloud → automatic SSL + CDN). Set the
+         NEXT_PUBLIC_* mainnet env vars in the Pages project. Then
+         ENS content hash for thesummoning.eth.
 Step 39: Set up monitoring + alerting on backend                          ✅ implemented
          Implemented in commit 6d1983a — three watchdogs run from index.ts:
           a. Stuck-VRF detector (vrfMonitor.ts): persists every

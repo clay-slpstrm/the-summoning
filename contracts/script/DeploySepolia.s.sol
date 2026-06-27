@@ -17,8 +17,12 @@ import "../src/EldritchGlyphs.sol";
 ///         Pausable, getTokensOut, claimGlyphs, lifetimeContribution, etc. We can't
 ///         test the new architecture against the old bytecode.
 ///
+/// Deployer signer is supplied via CLI flag, NOT an env var (mirrors DeployMainnet):
+///   --account deployer --sender <deployerAddr>   (keystore; recommended)
+///   --ledger --sender <deployerAddr>             (hardware wallet)
+///   --private-key <key>                          (raw; discouraged)
+///
 /// Required env vars:
-///   DEPLOYER_PRIVATE_KEY       — deployer EOA private key (pays gas)
 ///   VRF_COORDINATOR            — Chainlink VRF V2.5 coordinator (Sepolia: 0x9DdfaCa8183c41ad55329BdeeD9F6A8d53168B1B)
 ///   VRF_SUBSCRIPTION_ID        — Sepolia VRF subscription ID (uint256)
 ///   VRF_KEY_HASH               — VRF key hash / gas lane
@@ -31,7 +35,9 @@ import "../src/EldritchGlyphs.sol";
 ///
 /// Usage:
 ///   forge script script/DeploySepolia.s.sol:DeploySepolia \
-///     --rpc-url $SEPOLIA_RPC_URL --broadcast --verify
+///     --rpc-url $SEPOLIA_RPC_URL \
+///     --account deployer --sender $DEPLOYER_ADDRESS \
+///     --broadcast --verify
 contract DeploySepolia is Script {
     struct VrfConfig {
         address coordinator;
@@ -50,14 +56,15 @@ contract DeploySepolia is Script {
     }
 
     function run() external {
-        uint256 deployerPrivateKey = vm.envUint("DEPLOYER_PRIVATE_KEY");
-        address deployer = vm.addr(deployerPrivateKey);
+        // Signer (and thus msg.sender) comes from the CLI flag: --account / --ledger
+        // / --private-key. No raw key in the environment.
+        address deployer = msg.sender;
         address owner = vm.envOr("MULTISIG_ADDRESS", deployer);
         bool usingMultisig = owner != deployer;
 
         VrfConfig memory vrf = _loadVrfConfig();
 
-        vm.startBroadcast(deployerPrivateKey);
+        vm.startBroadcast();
         Deployed memory d = _deployAll(owner, vrf);
         _wire(d, owner, usingMultisig);
         vm.stopBroadcast();

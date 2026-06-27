@@ -11,21 +11,25 @@ import "../src/EldritchGlyphs.sol";
 /// @notice Full mainnet deployment of all 5 contracts.
 ///         Uses a multisig as owner for all contracts (not the deployer EOA).
 ///
+/// Deployer signer is supplied via CLI flag, NOT an env var, so the raw key never
+/// touches the environment:
+///   --account deployer --sender <deployerAddr>   (keystore; recommended)
+///   --ledger --sender <deployerAddr>             (hardware wallet)
+///   --private-key <key>                          (raw; discouraged)
+///
 /// Required env vars:
-///   DEPLOYER_PRIVATE_KEY       — deployer EOA private key (pays gas, NOT the owner)
 ///   MULTISIG_ADDRESS           — Safe multisig address (becomes owner of all contracts)
 ///   VRF_COORDINATOR            — Chainlink VRF V2.5 coordinator (mainnet)
 ///   VRF_SUBSCRIPTION_ID        — VRF subscription ID (uint256)
 ///   VRF_KEY_HASH               — VRF key hash / gas lane
-///   VRF_CALLBACK_GAS_LIMIT     — gas limit for VRF callback (default: 2_500_000)
-///                                Sized for the new batched fulfillRandomWords
-///                                (up to 50 glyphs per claim). DO NOT reduce
-///                                below ~2_500_000 unless MAX_GLYPHS_PER_REQUEST
-///                                is also lowered.
-///   METADATA_BASE_URI          — base URI for glyph metadata (default: https://api.thesummoning.xyz/metadata/glyph/)
+///   VRF_CALLBACK_GAS_LIMIT     — gas limit for VRF callback (default: 2_500_000,
+///                                Chainlink V2.5's ceiling). Worst-case batched
+///                                fulfillRandomWords (MAX_GLYPHS_PER_REQUEST = 20)
+///                                measured 2.04M gas on Sepolia. DO NOT reduce
+///                                unless MAX_GLYPHS_PER_REQUEST is also lowered.
+///   METADATA_BASE_URI          — base URI for glyph metadata (default: https://api.thesummoning.xyz/api/metadata/glyph/)
 contract DeployMainnet is Script {
     function run() external {
-        uint256 deployerPrivateKey = vm.envUint("DEPLOYER_PRIVATE_KEY");
         address multisig = vm.envAddress("MULTISIG_ADDRESS");
 
         // VRF config
@@ -35,10 +39,11 @@ contract DeployMainnet is Script {
         uint32 callbackGasLimit = uint32(vm.envOr("VRF_CALLBACK_GAS_LIMIT", uint256(2_500_000)));
         string memory baseURI = vm.envOr(
             "METADATA_BASE_URI",
-            string("https://api.thesummoning.xyz/metadata/glyph/")
+            string("https://api.thesummoning.xyz/api/metadata/glyph/")
         );
 
-        vm.startBroadcast(deployerPrivateKey);
+        // Signer comes from the CLI flag (--account / --ledger / --private-key).
+        vm.startBroadcast();
 
         // 1. Deploy RitualToken — multisig is owner
         RitualToken token = new RitualToken(multisig);
@@ -48,7 +53,7 @@ contract DeployMainnet is Script {
 
         // 3. Deploy ElderArtifacts — multisig is owner
         ElderArtifacts artifacts = new ElderArtifacts(
-            "https://api.thesummoning.xyz/metadata/",
+            "https://api.thesummoning.xyz/api/metadata/artifact/",
             multisig
         );
 
