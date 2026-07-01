@@ -8,9 +8,11 @@
  */
 
 import { createPublicClient, http, parseAbiItem, type PublicClient } from "viem";
-import { sepolia } from "viem/chains";
+import { mainnet, sepolia } from "viem/chains";
 import { config } from "../config.js";
 import { handleGlyphMinted } from "./glyphMintHandler.js";
+
+const chain = config.CHAIN_ID === 1 ? mainnet : sepolia;
 
 const glyphMintedEvent = parseAbiItem(
   "event GlyphMinted(uint256 indexed tokenId, address indexed recipient, uint8 tier, uint8 runeIndex, uint8 loreIndex, uint256 epochId)"
@@ -28,7 +30,7 @@ export async function backfillGlyphEvents(blockRange: number = config.BACKFILL_B
   }
 
   const client: PublicClient = createPublicClient({
-    chain: sepolia,
+    chain,
     transport: http(config.RPC_URL),
   });
 
