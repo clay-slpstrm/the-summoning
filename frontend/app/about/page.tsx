@@ -3,6 +3,30 @@
 import { motion } from "framer-motion";
 import Link from "next/link";
 import { GLYPH_TIERS, CULT_RANKS } from "@/lib/constants";
+import {
+  RITUAL_TOKEN_ADDRESS,
+  MINTING_CURVE_ADDRESS,
+  SUMMONING_ENGINE_ADDRESS,
+  ELDER_ARTIFACTS_ADDRESS,
+  ELDRITCH_GLYPHS_ADDRESS,
+} from "@/lib/contracts";
+
+const EXPLORER_BASE =
+  process.env.NEXT_PUBLIC_CHAIN_ID === "11155111"
+    ? "https://sepolia.etherscan.io"
+    : "https://etherscan.io";
+
+const CONTRACTS = [
+  { name: "RitualToken", addr: RITUAL_TOKEN_ADDRESS },
+  { name: "MintingCurve", addr: MINTING_CURVE_ADDRESS },
+  { name: "SummoningEngine", addr: SUMMONING_ENGINE_ADDRESS },
+  { name: "ElderArtifacts", addr: ELDER_ARTIFACTS_ADDRESS },
+  { name: "EldritchGlyphs", addr: ELDRITCH_GLYPHS_ADDRESS },
+] as const;
+
+function shortAddr(addr: string): string {
+  return addr ? `${addr.slice(0, 6)}…${addr.slice(-4)}` : "—";
+}
 
 const fadeUp = {
   hidden: { opacity: 0, y: 30 },
@@ -86,7 +110,10 @@ export default function AboutPage() {
 
         {/* ─── The Pitch ─── */}
         <Section className="mt-16 sm:mt-24" delay={0.1}>
-          <p className="text-lg sm:text-xl font-serif text-gray-300 leading-relaxed text-center">
+          <h2 className="text-2xl sm:text-3xl font-serif font-bold text-gray-200 text-center">
+            Make Ethereum <em className="text-ritual-light not-italic">Fun</em> Again
+          </h2>
+          <p className="text-lg sm:text-xl font-serif text-gray-300 leading-relaxed text-center mt-5">
             Ethereum used to be <em className="text-ritual-light not-italic">fun</em>.
           </p>
           <p className="text-base sm:text-lg font-serif text-gray-400 leading-relaxed text-center mt-4">
@@ -95,9 +122,9 @@ export default function AboutPage() {
             and doom-scrolling.
           </p>
           <p className="text-base sm:text-lg font-serif text-gray-300 leading-relaxed text-center mt-4">
-            The Summoning is a love letter to that feeling &mdash; rebuilt for the current moment.
-            Instead of watching charts, you&apos;re channeling collective degen energy into an
-            eldritch coordination game with real stakes and real rewards.
+            The Summoning is a love letter to that feeling, built for the current moment.
+            Instead of watching charts, you&apos;re channeling collective degen energy into
+            summoning the Old Ones to bring about the prophesied Supercycle upon the crypto market.
           </p>
         </Section>
 
@@ -118,25 +145,25 @@ export default function AboutPage() {
               {
                 step: "I",
                 title: "Mint $RITUAL",
-                desc: "Deposit ETH into the minting curve. The price rises with supply \u2014 early believers pay less. You receive $RITUAL tokens, the fuel for everything that follows.",
+                desc: "Deposit ETH into the minting curve. The price rises with supply, early believers pay less. You receive $RITUAL tokens, the fuel for everything that follows.",
                 color: "#7c3aed",
               },
               {
                 step: "II",
                 title: "Sacrifice to the Void",
-                desc: "When the ritual phase opens, burn your $RITUAL. Every sacrifice feeds the portal and earns you a provably fair Eldritch Glyph \u2014 an on-chain ERC-1155 NFT with a random rune, tier, and lore fragment.",
+                desc: "When the ritual phase opens, burn your $RITUAL. Every sacrifice feeds the portal and earns you a provably fair Eldritch Glyph, an on-chain ERC-1155 NFT with a random rune, tier, and lore fragment.",
                 color: "#A855F7",
               },
               {
                 step: "III",
                 title: "Collect Glyphs, Rise in Rank",
-                desc: "Glyphs come in five tiers from common Whispers to the mythic Breach. Collect enough and your cult rank rises \u2014 from Uninitiated to Herald of the Breach. Each glyph is yours to keep or trade.",
+                desc: "Glyphs come in five tiers from common Whispers to the mythic Breach. Collect enough and your cult rank rises, from Uninitiated to Herald of the Breach. Each glyph is yours to keep or trade.",
                 color: "#4A9EFF",
               },
               {
                 step: "IV",
                 title: "Summon the Old One",
-                desc: "If the collective sacrifice meets the threshold before time runs out, the summoning succeeds. Top contributors earn tiered artifacts \u2014 Harbinger, Acolyte, or Cultist. If it fails? You receive a Shattered Ritual. Proof you tried.",
+                desc: "If the collective sacrifice meets the threshold before time runs out, the summoning succeeds. Top contributors earn tiered artifacts: Harbinger, Acolyte, or Cultist. If it fails? You receive a Shattered Ritual. Proof you tried.",
                 color: "#EF4444",
               },
             ].map((item) => (
@@ -171,8 +198,8 @@ export default function AboutPage() {
             Eldritch Glyphs
           </h2>
           <p className="text-sm sm:text-base text-gray-300 text-center mb-8 max-w-md mx-auto">
-            Every sacrifice mints a glyph. Tier is determined by Chainlink VRF &mdash;
-            provably fair, fully on-chain. No server decides your fate.
+            Every sacrifice mints a glyph. Tier is determined by Chainlink VRF,
+            provably fair and fully on-chain. No server decides your fate.
           </p>
 
           <div className="grid grid-cols-5 gap-2 sm:gap-3 max-w-sm mx-auto">
@@ -255,7 +282,7 @@ export default function AboutPage() {
             </p>
             <p>
               We didn&apos;t build another yield farm or another governance token.
-              We built a game &mdash; one that rewards coordination, creates shared
+              We built a game, one that rewards coordination, creates shared
               moments, and gives you something tangible for showing up.
             </p>
             <p className="text-gray-500">
@@ -295,6 +322,32 @@ export default function AboutPage() {
                   </div>
                 </div>
               ))}
+            </div>
+
+            <div className="mt-8 pt-6" style={{ borderTop: "1px solid #7c3aed22" }}>
+              <div className="text-[11px] sm:text-[12px] tracking-[3px] uppercase font-mono text-gray-300 mb-4 font-bold">
+                Don&apos;t trust us. Verify.
+              </div>
+              <div className="space-y-1.5 max-w-xs mx-auto">
+                {CONTRACTS.map((c) => (
+                  <a
+                    key={c.name}
+                    href={`${EXPLORER_BASE}/address/${c.addr}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="flex items-center justify-between text-[12px] sm:text-[13px] font-mono text-gray-300 hover:text-ritual-light transition-colors no-underline"
+                  >
+                    <span>{c.name}</span>
+                    <span>
+                      {shortAddr(c.addr)} <span aria-hidden>&#8599;</span>
+                    </span>
+                  </a>
+                ))}
+              </div>
+              <p className="text-[11px] text-gray-400 font-mono mt-4 leading-relaxed">
+                Source-verified on Etherscan. Owned by a 2-of-3 multisig.
+                Supply hard-capped at 1B $RITUAL.
+              </p>
             </div>
           </div>
         </Section>

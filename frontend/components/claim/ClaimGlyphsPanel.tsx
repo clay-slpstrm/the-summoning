@@ -85,7 +85,7 @@ export default function ClaimGlyphsPanel({ epoch }: { epoch: EpochData }) {
           No Glyphs Earned
         </div>
         <div className="text-xs sm:text-sm text-gray-300 italic">
-          You sacrificed {Number(formatEther(contribWei)).toLocaleString(undefined, { maximumFractionDigits: 0 })} $RITUAL —
+          You sacrificed {Number(formatEther(contribWei)).toLocaleString(undefined, { maximumFractionDigits: 0 })} $RITUAL,
           below the 100 RITUAL threshold for a glyph in this epoch.
         </div>
         <div className="text-[11px] sm:text-[12px] text-gray-500 font-mono tracking-wide">
@@ -187,7 +187,7 @@ export default function ClaimGlyphsPanel({ epoch }: { epoch: EpochData }) {
 
       {remaining > MAX_PER_CLAIM && (
         <div className="text-[11px] text-gray-500 italic tracking-wide text-center">
-          Capped at {MAX_PER_CLAIM.toString()} per claim — call again for the rest.
+          Capped at {MAX_PER_CLAIM.toString()} per claim, call again for the rest.
         </div>
       )}
     </div>

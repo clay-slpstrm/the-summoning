@@ -18,7 +18,7 @@ export default function GlyphCollection() {
     return (
       <div className="card min-h-[200px] sm:min-h-[300px]">
         <div className="section-label">
-          Your Glyph Collection — 0 acquired
+          Your Glyph Collection, 0 acquired
         </div>
         <div className="text-center py-8 sm:py-10 text-gray-600 italic text-sm">
           No glyphs yet. Perform a sacrifice to receive your first glyph.
@@ -30,7 +30,7 @@ export default function GlyphCollection() {
   return (
     <div className="card min-h-[200px] sm:min-h-[300px]">
       <div className="section-label">
-        Your Glyph Collection — {glyphs.length} acquired
+        Your Glyph Collection, {glyphs.length} acquired
       </div>
       <div className="grid gap-1 sm:gap-1.5" style={{ gridTemplateColumns: "repeat(auto-fill, minmax(44px, 1fr))" }}>
         {glyphs.map((glyph, i) => {

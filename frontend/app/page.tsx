@@ -116,7 +116,7 @@ export default function Home() {
               <div className="card text-center py-6 space-y-2">
                 <div className="section-label">Sacrifice opens soon</div>
                 <p className="text-xs sm:text-sm text-gray-300 italic">
-                  The gathering phase is active. Mint your $RITUAL tokens now — when the ritual phase begins, you&apos;ll sacrifice them to receive on-chain glyphs.
+                  The gathering phase is active. Mint your $RITUAL tokens now. When the ritual phase begins, you&apos;ll sacrifice them to receive on-chain glyphs.
                 </p>
               </div>
             ) : null}

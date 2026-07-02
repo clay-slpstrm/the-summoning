@@ -52,7 +52,7 @@ export default function EpochStatus() {
   if (error) {
     return (
       <div className="card text-center py-8">
-        <div className="text-[12px] font-mono text-red-500/80">RPC error — retrying</div>
+        <div className="text-[12px] font-mono text-red-500/80">RPC error, retrying</div>
         <div className="text-[11px] font-mono text-gray-500 mt-1 break-all">{error.slice(0, 80)}</div>
       </div>
     );

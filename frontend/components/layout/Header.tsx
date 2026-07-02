@@ -12,7 +12,7 @@ export function Header() {
   const { epoch } = useEpochProgress();
 
   const subtitle = epoch
-    ? `Epoch ${epoch.epochId} — ${epoch.oldOneSubtitle}`
+    ? `Epoch ${epoch.epochId}, ${epoch.oldOneSubtitle}`
     : "The veil grows thin...";
 
   return (
