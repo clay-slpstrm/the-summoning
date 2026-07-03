@@ -14,6 +14,7 @@ import Leaderboard from "@/components/rank/Leaderboard";
 import SacrificePanel from "@/components/sacrifice/SacrificePanel";
 import ClaimArtifact from "@/components/claim/ClaimArtifact";
 import ClaimGlyphsPanel from "@/components/claim/ClaimGlyphsPanel";
+import PreLaunchHero from "@/components/layout/PreLaunchHero";
 import { useGlyphs } from "@/hooks/useGlyphs";
 import { useEpochProgress } from "@/hooks/useEpochProgress";
 import { useUIStore } from "@/stores/uiStore";
@@ -72,6 +73,9 @@ export default function Home() {
             </div>
           </div>
         )}
+
+        {/* Pre-launch hero — only while no epoch exists on-chain */}
+        {!epoch && <PreLaunchHero />}
 
         {/* Mint interface */}
         <div className="max-w-md mx-auto mt-6 sm:mt-8">
