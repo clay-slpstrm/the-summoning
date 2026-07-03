@@ -68,17 +68,28 @@ Artifact art for all 5 ids × 4 tiers is already live on the metadata API.
 
 ### threshold (in $RITUAL, pass as wei: value × 1e18)
 
-- **Epoch 1**: `50000e18` = `50000000000000000000000` (50k RITUAL ≈ 5.7 ETH collective;
-  ~25 "full-pack" wallets of 2,000 RITUAL each).
-- **Every later epoch**: read the built-in policy suggestion (1.3× after success,
-  0.8× after failure):
-  ```bash
-  cast call 0x5D474E68c08B2aF16dFEd50377B98573e17a5be5 "nextThreshold()(uint256)" --rpc-url $RPC
-  ```
-  Returns wei — pass it through unchanged unless overriding. **Override cases:**
-  - Prior epoch overshot massively (totalCommitted ≥ 2× threshold) → consider more than 1.3×.
-  - Community shrank / engagement soft → consider holding flat instead of 1.3×.
-  - Never pass 0 (reverts).
+**Season-one policy (decided 2026-07-03): start 75k, DOUBLE on success, HALVE on
+failure, floor 25k.** This intentionally overrides the contract's advisory
+`nextThreshold()` view (which suggests 1.3×/0.8× — it is a suggestion only;
+`startEpoch` accepts any nonzero threshold).
+
+- **Epoch 1**: `75000e18` = `75000000000000000000000` (75k RITUAL ≈ 8.5 ETH
+  collective; ~38 "full-pack" wallets of 2,000 RITUAL each).
+- **After a success**: 2× the epoch's threshold, advancing the arc:
+
+  | Success # | Old One | Threshold | Collective cost |
+  |---|---|---|---|
+  | 1 | Cthulhu | 75k | ~8.5 ETH |
+  | 2 | Nyarlathotep | 150k | ~17 ETH |
+  | 3 | Azathoth | 300k | ~34 ETH |
+  | 4 | Shub-Niggurath | 600k | ~68 ETH |
+  | 5 | Yog-Sothoth (finale) | 1.2M | ~137 ETH |
+
+  Season-one floor if all five succeed: 2.325M RITUAL burned ≈ **~264 ETH** minted.
+- **After a failure**: 0.5× the failed threshold (retry the same Old One), never
+  below the **25k floor**. One failure is always recoverable in a single step.
+- Judgment overrides welcome (e.g. totalCommitted ≥ 3× threshold → consider more
+  than 2×). Never pass 0 (reverts).
 
 ### oldOneId
 
@@ -93,8 +104,9 @@ Artifact art for all 5 ids × 4 tiers is already live on the metadata API.
    If it does not load (has happened before), toggle **Custom data** and paste hex:
    ```bash
    cast calldata "startEpoch(uint256,uint256)" <oldOneId> <thresholdWei>
-   # e.g. epoch 1 (Cthulhu, 50k):
-   # 0xfb8afa7f00…01…0a968163f0a57b400000   (selector 0xfb8afa7f)
+   # e.g. epoch 1 (Cthulhu oldOneId=1, 75k RITUAL):
+   # 0xfb8afa7f0000000000000000000000000000000000000000000000000000000000000001000000000000000000000000000000000000000000000fe1c215e8f838e00000
+   # (selector 0xfb8afa7f)
    ```
    ETH value: 0.
 4. **Simulate (Tenderly) before signing** — must pass. (Reminder from the wiring
@@ -142,8 +154,8 @@ What players get via `claimReward`:
 Operator checklist:
 - [ ] Announce the successful summoning + claim window is open (no deadline exists,
   but prompt claiming keeps energy up).
-- [ ] `nextThreshold()` now returns **1.3× the epoch's threshold** — decide next
-  threshold (Part 2) and next Old One (advance the arc).
+- [ ] Next threshold = **2× this epoch's threshold** (season-one policy, Part 2 —
+  ignore `nextThreshold()`'s 1.3× suggestion); next Old One = advance the arc.
 - [ ] Optional treasury sweep: `MintingCurve.withdraw(to)` from the Safe (Transaction
   Builder; selector via `cast calldata "withdraw(address)" <safe>`). Curve keeps
   working with a zero balance; sweep cadence is a policy choice, not required per epoch.
@@ -159,22 +171,26 @@ contributing again in a later successful epoch.
 Operator checklist:
 - [ ] Announce honestly: summoning failed, the Old One did not come through; glyphs +
   Shattered Ritual are claimable now. (Shattered Ritual scarcity is a feature — lean in.)
-- [ ] `nextThreshold()` now returns **0.8× the epoch's threshold**.
-- [ ] Strongly consider **retrying the same oldOneId** at the reduced threshold —
+- [ ] Next threshold = **0.5× the failed threshold, floor 25k** (season-one policy,
+  Part 2 — ignore `nextThreshold()`'s 0.8× suggestion).
+- [ ] Strongly consider **retrying the same oldOneId** at the halved threshold —
   narrative continuity ("the veil resisted; the cult regroups").
 - [ ] Diagnose before restarting: was the threshold too high for the audience, or did
   the Ritual window catch a dead 24h (weekend/timezone)? Time the next startEpoch so
   the Ritual phase (T+48h→T+72h) lands in peak hours.
-- [ ] Two consecutive failures → pause and rethink sizing with the table in the
-  threshold analysis (52k RITUAL ≈ full-pack × 25 wallets) rather than grinding 0.8×.
+- [ ] At the 25k floor and still failing → stop starting epochs; the problem is
+  audience, not threshold. Return to MARKETING.md and rebuild the funnel first.
 
 ## Quick reference
 
 ```text
 startEpoch selector:   0xfb8afa7f  — startEpoch(uint256 oldOneId, uint256 thresholdWei)
-50k RITUAL in wei:     50000000000000000000000
+75k RITUAL in wei:     75000000000000000000000
+25k floor in wei:      25000000000000000000000
 Epoch timing:          gathering 48h → ritual 24h → auto-resolve
-Threshold policy:      success ×1.3, failure ×0.8  (advisory via nextThreshold(); owner may override)
+Threshold policy:      SEASON ONE: start 75k, success ×2, failure ×0.5, floor 25k
+                       (contract's nextThreshold() 1.3×/0.8× is advisory — we override)
+Season-one arc:        75k → 150k → 300k → 600k → 1.2M  (≈264 ETH floor if 5/5)
 resolveEpoch():        permissionless after ritualEnd — manual fallback for Automation
 Full-pack unit:        2,000 RITUAL/wallet = 20-glyph claim cap ≈ 0.23 ETH
 Revenue rule of thumb: ≈ 0.0001136 ETH per RITUAL minted (flat until ~10M supply)

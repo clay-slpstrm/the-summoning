@@ -6,17 +6,18 @@
 
 ## 1. The concrete target
 
-Epoch 1 succeeds at **50,000 RITUAL burned ≈ 5.7 ETH collective ≈ 25 "full-pack"
-wallets** (2,000 RITUAL each) or ~50–60 mixed casual/committed wallets.
+Epoch 1 succeeds at **75,000 RITUAL burned ≈ 8.5 ETH collective ≈ 38 "full-pack"
+wallets** (2,000 RITUAL each) or ~70 mixed casual/committed wallets. (Season-one
+threshold arc doubles per success to a 1.2M finale — see RUNBOOK.md Part 2.)
 
 Working backwards at typical crypto funnel rates (~5% visitor→wallet):
 
 | Metric | Target before T0 |
 |---|---|
-| Engaged site visitors (CF Web Analytics) | 500–1,000 |
-| X followers | 300+ |
-| Discord members | 100+ |
-| Wallets that have minted any $RITUAL | 40+ (mint opens before epoch 1 — the curve is live now) |
+| Engaged site visitors (CF Web Analytics) | 800–1,500 |
+| X followers | 400+ |
+| Discord members | 150+ |
+| Wallets that have minted any $RITUAL | 50+ (mint opens before epoch 1 — the curve is live now) |
 
 The mint-before-launch number is the truest signal: minting works today, and
 RITUAL bought now is RITUAL waiting to be burned at T0.
