@@ -164,7 +164,7 @@ function GlyphDetailContent({
         {/* Stats grid */}
         <div className="mt-5 space-y-2 text-[13px] sm:text-[14px] font-mono">
           <StatRow label="Rune" value={`${glyph.rune}  ·  ${runeIndex >= 0 ? `${runeIndex + 1} of ${RUNE_SHAPES.length}` : "?"}`} />
-          <StatRow label="Epoch" value={oldOne ? `${glyph.epochId} — ${oldOne.name}` : `${glyph.epochId}`} />
+          <StatRow label="Epoch" value={oldOne ? `${glyph.epochId}, ${oldOne.name}` : `${glyph.epochId}`} />
           {glyph.tokenId !== undefined && <StatRow label="Token ID" value={`#${glyph.tokenId}`} />}
         </div>
 

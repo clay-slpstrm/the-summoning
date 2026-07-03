@@ -32,7 +32,7 @@ export default function Leaderboard() {
 
   return (
     <div className="card">
-      <div className="section-label">Leaderboard — Top Collectors</div>
+      <div className="section-label">Leaderboard, Top Collectors</div>
 
       {isLoading && (
         <div className="space-y-2">

@@ -48,7 +48,7 @@ export default function GlyphCollection() {
                   ? `0 0 16px ${tier.glow}, 0 0 32px ${tier.glow}`
                   : `0 0 8px ${tier.glow}`,
               }}
-              title={`${glyph.tierName} Glyph: ${glyph.rune} — click for details`}
+              title={`${glyph.tierName} Glyph: ${glyph.rune}, click for details`}
             >
               <span
                 className="transition-transform duration-200 group-hover:scale-125"
