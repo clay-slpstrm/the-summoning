@@ -2,6 +2,7 @@
 
 import { motion } from "framer-motion";
 import Link from "next/link";
+import Footer from "@/components/layout/Footer";
 import { GLYPH_TIERS, CULT_RANKS } from "@/lib/constants";
 import {
   RITUAL_TOKEN_ADDRESS,
@@ -367,6 +368,8 @@ export default function AboutPage() {
             &ldquo;That is not dead which can eternal lie&rdquo;
           </p>
         </Section>
+
+        <Footer />
       </div>
     </div>
   );

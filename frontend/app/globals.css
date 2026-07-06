@@ -111,6 +111,19 @@
   }
 }
 
+/* Readability pass (user request): Courier New renders hairline-thin on the
+   dark void background. Bolden ALL monospace type and lift the two dimmest
+   gray utilities one step. Placed outside @layer so these win over utilities. */
+.font-mono {
+  font-weight: 700;
+}
+.text-gray-500 {
+  color: #9ca3af; /* former gray-400 */
+}
+.text-gray-400 {
+  color: #b7bcc9; /* between gray-400 and gray-300 */
+}
+
 /* Mobile overrides — outside @layer to avoid @apply + responsive issues */
 @media (max-width: 639px) {
   .card {

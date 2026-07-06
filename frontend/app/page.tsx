@@ -14,7 +14,8 @@ import Leaderboard from "@/components/rank/Leaderboard";
 import SacrificePanel from "@/components/sacrifice/SacrificePanel";
 import ClaimArtifact from "@/components/claim/ClaimArtifact";
 import ClaimGlyphsPanel from "@/components/claim/ClaimGlyphsPanel";
-import PreLaunchHero from "@/components/layout/PreLaunchHero";
+import PreLaunchModal from "@/components/layout/PreLaunchModal";
+import Footer from "@/components/layout/Footer";
 import { useGlyphs } from "@/hooks/useGlyphs";
 import { useEpochProgress } from "@/hooks/useEpochProgress";
 import { useUIStore } from "@/stores/uiStore";
@@ -74,8 +75,8 @@ export default function Home() {
           </div>
         )}
 
-        {/* Pre-launch hero — only while no epoch exists on-chain */}
-        {!epoch && <PreLaunchHero />}
+        {/* Pre-launch CTA modal, once per session while no epoch exists on-chain */}
+        {!epoch && <PreLaunchModal />}
 
         {/* Mint interface */}
         <div className="max-w-md mx-auto mt-6 sm:mt-8">
@@ -139,6 +140,8 @@ export default function Home() {
         <div className="mt-6 sm:mt-8">
           <Leaderboard />
         </div>
+
+        <Footer showAbout />
       </div>
     </div>
   );
