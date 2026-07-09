@@ -15,7 +15,11 @@ export type AlertType =
   | "stuck_vrf"
   | "low_link"
   | "backend_unhealthy"
-  | "event_listener_lagging";
+  | "event_listener_lagging"
+  | "epoch_resolved"
+  | "epoch_resolution_overdue"
+  | "keeper_error"
+  | "low_keeper_eth";
 
 export type AlertPayload = {
   type: AlertType;

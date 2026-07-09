@@ -109,7 +109,7 @@ export default function Home() {
               <div className="card text-center py-6 space-y-2">
                 <div className="section-label" style={{ color: "#FCD34D" }}>Awaiting Resolution</div>
                 <p className="text-xs sm:text-sm text-gray-300 italic">
-                  The ritual window has closed. Chainlink Automation will finalize the outcome shortly. Rewards will appear here once resolution is on-chain.
+                  The ritual window has closed. The outcome is being finalized on-chain. Rewards will appear here once resolution lands.
                 </p>
               </div>
             ) : epoch.phase === "Resolved" ? (

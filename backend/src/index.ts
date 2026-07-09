@@ -8,6 +8,7 @@ import { startEventListener, startGlyphEventListener } from "./services/eventLis
 import { startEpochSync } from "./services/epochSync.js";
 import { backfillGlyphEvents } from "./services/backfill.js";
 import { startVrfMonitor } from "./services/vrfMonitor.js";
+import { startEpochKeeper } from "./services/epochKeeper.js";
 import { setupRoutes } from "./api/routes.js";
 
 validateConfig();
@@ -59,4 +60,8 @@ server.listen(config.PORT, () => {
   // Safe to start even without ELDRITCH_GLYPHS_ADDRESS — the checks will no-op until
   // the config is present.
   startVrfMonitor();
+
+  // Self-hosted epoch resolver (replaces Chainlink Automation, sunset 2026-07-31).
+  // No-ops with a warning unless KEEPER_PRIVATE_KEY is set.
+  startEpochKeeper();
 });

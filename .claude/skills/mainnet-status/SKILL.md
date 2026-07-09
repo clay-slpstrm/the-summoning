@@ -76,5 +76,5 @@ Render logs (dashboard → the-summoning-backend → Logs) should tick `[EPOCH] 
 ## Interpretation notes
 
 - Backend serving data that contradicts the chain = env/DB drift; see memory of the 2026-07-02 cutover incident (stale Sepolia values on Render).
-- `resolveEpoch()` is permissionless after ritualEnd — if Automation missed it, anyone can call it.
+- Epoch auto-resolution = the backend's own keeper (`epochKeeper.ts`; Chainlink Automation sunset 2026-07-31). Check Render boot logs for `[KEEPER] Epoch keeper started` and the keeper wallet's gas ETH. `resolveEpoch()` is permissionless after ritualEnd — if the keeper missed it, anyone can call it.
 - Treasury balance (info, not fault): `cast balance $CURVE` — all withdrawable by Safe via withdraw().

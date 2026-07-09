@@ -56,9 +56,16 @@ Artifact art for all 5 ids × 4 tiers is already live on the metadata API.
   retryable so this is not epoch-blocking, but fix before Ritual phase):
   subscription `52852180…590203` at vrf.chain.link — keep well above the 5-LINK
   alert floor. Low-LINK watchdog alerts via backend if configured.
-- [ ] **1.6 Automation upkeep funded** (auto-resolve at ritualEnd): check the
-  SummoningEngine upkeep at automation.chain.link has LINK. Fallback if it lapses:
-  `resolveEpoch()` is **permissionless** — anyone can call it once ritualEnd passes:
+- [ ] **1.6 Epoch keeper armed** (auto-resolve at ritualEnd — self-hosted in the
+  backend; Chainlink Automation sunset 2026-07-31 and was replaced by
+  `backend/src/services/epochKeeper.ts`):
+  - Render env has `KEEPER_PRIVATE_KEY` set; boot logs show
+    `[KEEPER] Epoch keeper started (wallet 0x…)` — NOT the "disabled" warning.
+  - Keeper wallet holds ≥ 0.005 ETH gas: `cast balance <keeper-wallet> --rpc-url $RPC`
+  - Alerts configured (ALERT_WEBHOOK_URL / Telegram) so `keeper_error` /
+    `epoch_resolution_overdue` pages actually reach you.
+  Fallback if the keeper is down: `resolveEpoch()` is **permissionless** — anyone
+  can call it once ritualEnd passes:
   ```bash
   cast send 0x5D474E68c08B2aF16dFEd50377B98573e17a5be5 "resolveEpoch()" --rpc-url $RPC --account <any-funded-account>
   ```
@@ -130,10 +137,12 @@ failure, floor 25k.** This intentionally overrides the contract's advisory
 - T+0 → T+48h **Gathering**: minting only; sacrifices revert until ritualStart.
 - T+48h → T+72h **Ritual**: `commitRitual` open (min 1 RITUAL, 30s cooldown per wallet).
   Portal % = totalCommitted / threshold, shared by all viewers.
-- T+72h **ritualEnd**: Chainlink Automation calls `performUpkeep` → epoch resolves.
+- T+72h **ritualEnd**: the backend epoch keeper calls `resolveEpoch()` (checks
+  every 60s; sends an `epoch_resolved` alert on success).
   - [ ] Verify an `EpochResolved` event / `resolved == true` within ~15 min of ritualEnd.
-  - [ ] If not: call permissionless `resolveEpoch()` manually (see 1.6) and investigate
-    the upkeep (out of LINK? paused?).
+  - [ ] If not: call permissionless `resolveEpoch()` manually (see 1.6) and check
+    Render logs for `[KEEPER]` errors (out of gas ETH? RPC failing?). An
+    `epoch_resolution_overdue` alert fires automatically at 30 min.
 - Players self-serve after resolution — **success or failure alike**:
   - `claimGlyphs(epochId)`: one VRF batch per wallet, 1 glyph per 100 RITUAL burned,
     cap 20. Works regardless of outcome. If VRF is down the claim reverts cleanly
@@ -191,7 +200,8 @@ Epoch timing:          gathering 48h → ritual 24h → auto-resolve
 Threshold policy:      SEASON ONE: start 75k, success ×2, failure ×0.5, floor 25k
                        (contract's nextThreshold() 1.3×/0.8× is advisory — we override)
 Season-one arc:        75k → 150k → 300k → 600k → 1.2M  (≈264 ETH floor if 5/5)
-resolveEpoch():        permissionless after ritualEnd — manual fallback for Automation
+resolveEpoch():        permissionless after ritualEnd — manual fallback for the keeper
+Epoch keeper:          backend/src/services/epochKeeper.ts, KEEPER_PRIVATE_KEY on Render
 Full-pack unit:        2,000 RITUAL/wallet = 20-glyph claim cap ≈ 0.23 ETH
 Revenue rule of thumb: ≈ 0.0001136 ETH per RITUAL minted (flat until ~10M supply)
 ```
