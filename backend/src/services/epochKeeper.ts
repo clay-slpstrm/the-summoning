@@ -73,6 +73,19 @@ export function shouldResolve(
   return !epoch.resolved && nowSec >= epoch.ritualEnd;
 }
 
+/**
+ * Season-one threshold policy (RUNBOOK.md Part 2): double on success, halve on
+ * failure, floor 25k RITUAL. A SUGGESTION for the human operating the Safe —
+ * startEpoch is onlyOwner and deliberately NOT automated. Exported for tests.
+ */
+const THRESHOLD_FLOOR = 25_000n * 10n ** 18n;
+
+export function suggestNextThreshold(threshold: bigint, successful: boolean): bigint {
+  if (successful) return threshold * 2n;
+  const halved = threshold / 2n;
+  return halved < THRESHOLD_FLOOR ? THRESHOLD_FLOOR : halved;
+}
+
 export function startEpochKeeper(): void {
   const rawKey = process.env.KEEPER_PRIVATE_KEY || "";
   if (!rawKey) {
@@ -132,10 +145,31 @@ export function startEpochKeeper(): void {
 
       if (receipt.status === "success") {
         console.log(`[KEEPER] Epoch ${epochId} resolved in tx ${hash}`);
+        // Re-read the settled epoch so the alert carries the outcome and the
+        // season-policy suggestion. The HUMAN starts the next epoch (Safe).
+        const [oldOneId, threshold, totalCommitted, , , , successful] =
+          await publicClient.readContract({
+            address: engine,
+            abi: ENGINE_ABI,
+            functionName: "getEpoch",
+            args: [epochId],
+          });
+        const fmt = (wei: bigint) => `${Number(wei / 10n ** 18n).toLocaleString()} RITUAL`;
+        const suggested = suggestNextThreshold(threshold, successful);
         await sendAlert({
           type: "epoch_resolved",
-          summary: `Epoch ${epochId} auto-resolved by keeper`,
-          details: { epochId: epochId.toString(), tx: hash },
+          summary: `Epoch ${epochId} resolved: ${successful ? "SUMMONED" : "FAILED"} (${fmt(totalCommitted)} of ${fmt(threshold)})`,
+          details: {
+            epochId: epochId.toString(),
+            outcome: successful ? "successful" : "failed",
+            totalCommitted: fmt(totalCommitted),
+            threshold: fmt(threshold),
+            tx: hash,
+            nextEpochSuggestion: successful
+              ? `${fmt(suggested)} (2x policy), next Old One in the arc (current was ${oldOneId})`
+              : `${fmt(suggested)} (0.5x policy, floor 25k), retry same Old One ${oldOneId}`,
+            reminder: "startEpoch is a Safe decision — see RUNBOOK.md Parts 1-3 before starting",
+          },
         });
       } else {
         throw new Error(`resolveEpoch tx reverted: ${hash}`);
