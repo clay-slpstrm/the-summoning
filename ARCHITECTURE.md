@@ -30,8 +30,8 @@
 | Solidity | 0.8.24+ | Contract language |
 | Foundry (forge, cast, anvil) | Latest | Build, test, deploy, local node |
 | OpenZeppelin Contracts | 5.x | ERC-20, ERC-1155, AccessControl, ReentrancyGuard |
-| Chainlink VRF | V2.5 | Verifiable randomness for epoch resolution |
-| Chainlink Automation | V2 | Automated epoch phase transitions |
+| Chainlink VRF | V2.5 | Verifiable randomness for glyph tiers |
+| Self-hosted epoch keeper | backend (epochKeeper.ts) | Auto-calls permissionless resolveEpoch() at ritualEnd. Replaced Chainlink Automation 2026-07-08 (v2.1 sunset 2026-07-31 closed new registrations; successor CRE rejected as launch risk). The contract retains AutomationCompatibleInterface (checkUpkeep/performUpkeep) — any keeper network can still drive it later. |
 
 ### Backend
 | Tool | Version | Purpose |
@@ -558,11 +558,11 @@ contract ElderArtifacts is ERC1155, Ownable {
     /// @notice Dynamic metadata URI. Points to backend API.
     /// @dev Override to serve per-token metadata from the API.
     function uri(uint256 tokenId) public pure override returns (string memory) {
-        // Returns: https://api.thesummoning.xyz/metadata/{tokenId}
+        // Returns: https://api.thesummoning.xyz/api/metadata/artifact/{tokenId}
         // The backend generates JSON dynamically based on epoch + tier
         return string(
             abi.encodePacked(
-                "https://api.thesummoning.xyz/metadata/",
+                "https://api.thesummoning.xyz/api/metadata/artifact/",
                 _toString(tokenId)
             )
         );
@@ -675,11 +675,15 @@ Deployment must follow this exact sequence:
 7. Call ElderArtifacts.setEngine(summoningEngineAddress)
 8. Call EldritchGlyphs.setEngine(summoningEngineAddress)
 9. Add EldritchGlyphs as VRF consumer on Chainlink subscription
-10. Register SummoningEngine as Chainlink Automation upkeep (for auto-resolution)
+10. Arm the backend epoch keeper: set KEEPER_PRIVATE_KEY (fresh gas-only wallet,
+    ~0.005 ETH) + ALERT_WEBHOOK_URL on the backend host. The keeper auto-calls the
+    permissionless resolveEpoch() at ritualEnd (epochKeeper.ts; replaced the
+    Chainlink Automation upkeep after the 2026-07-31 product sunset).
 11. Users must call RitualToken.approve(summoningEngineAddress, MAX_UINT) before committing.
     Note: glyphs are now claimed AFTER epoch resolution via `claimGlyphs(epochId)` — no
     VRF cost is incurred at sacrifice time. Each `claimGlyphs` call issues one VRF
-    request returning up to 50 random words. Whales with >50 earned glyphs call again.
+    request returning up to 20 random words (MAX_GLYPHS_PER_CLAIM, sized for the
+    2.5M VRF callback gas ceiling). Whales with >20 earned glyphs call again.
 ```
 
 ---
@@ -1205,9 +1209,9 @@ export async function updateCultRank(wallet: string) {
 6. During Ritual phase:
    a. User submits commitRitual(amount) — pure burn, no VRF
    b. On tx confirmed: pending-glyphs indicator updates from refetched contribution
-7. After resolveEpoch (or Chainlink Automation upkeep):
+7. After resolveEpoch (auto-called by the backend epoch keeper):
    a. ClaimArtifact + ClaimGlyphsPanel both render
-   b. User submits claimGlyphs(epochId) — one VRF request for up to 50 random words
+   b. User submits claimGlyphs(epochId) — one VRF request for up to 20 random words
    c. VRF callback → GlyphMinted events → backend pushes glyph_reveal WS messages
    d. Frontend enqueues each glyph onto revealQueue → booster-pack reveal animates
    e. Whales with >50 earned call claimGlyphs again for the next batch
@@ -1350,9 +1354,10 @@ Owner calls startEpoch(oldOneId, threshold)
    │     └─ Backend: Broadcasts epoch_update via WebSocket on each sacrifice
    │
    ├─→ Resolution  [block.timestamp >= ritualEnd]
-   │     ├─ Chainlink Automation calls performUpkeep() automatically
-   │     │   (checkUpkeep returns true when ritualEnd passed + not resolved)
-   │     │   Falls back to permissionless resolveEpoch() if Automation fails
+   │     ├─ Backend epoch keeper calls resolveEpoch() automatically
+   │     │   (epochKeeper.ts polls every 60s; sends past ritualEnd + unresolved;
+   │     │    epoch_resolution_overdue alert at 30 min if it hasn't landed)
+   │     │   Falls back to manual: resolveEpoch() is permissionless, anyone can call
    │     ├─ Contract: Compares totalCommitted vs threshold
    │     │   ├─ Success: epoch.successful = true
    │     │   └─ Failure: epoch.successful = false
@@ -1522,7 +1527,10 @@ ALCHEMY_API_KEY=
 VRF_COORDINATOR=0x...
 VRF_KEY_HASH=0x...
 VRF_SUBSCRIPTION_ID=
-AUTOMATION_REGISTRY=0x...
+
+# ── Backend epoch keeper (replaces Chainlink Automation) ──
+# Fresh gas-only wallet; zero protocol authority (resolveEpoch is permissionless)
+KEEPER_PRIVATE_KEY=0x...
 ```
 
 ---
@@ -1645,6 +1653,16 @@ Step 39: Set up monitoring + alerting on backend                          ✅ im
              tick lastEventAt; GET /api/health returns 503 if lag >
              HEALTH_MAX_LAG_MS (default 30 min) OR Postgres is down. Point
              an external uptime monitor at this with a 5-min interval.
+          d. Epoch keeper (epochKeeper.ts, added 2026-07-08 after the
+             Chainlink Automation sunset): polls every KEEPER_INTERVAL_MS
+             (60s); past ritualEnd + unresolved → simulate + send the
+             permissionless resolveEpoch() from KEEPER_PRIVATE_KEY (gas-only
+             wallet, zero protocol authority). Alerts: epoch_resolved (with
+             outcome + season-policy next-threshold suggestion), keeper_error,
+             epoch_resolution_overdue (30-min watchdog, fires even if the
+             keeper itself is broken), low_keeper_eth (gas floor, 6h check).
+             startEpoch remains a HUMAN Safe decision by design — the keeper
+             prepares the next-epoch numbers but never starts epochs.
 
          Pre-launch env wiring (backend/.env):
           - ALERT_WEBHOOK_URL=<Discord incoming webhook>
