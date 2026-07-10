@@ -74,6 +74,32 @@ source-verified. "Don't trust us. Verify." (the about page links every contract)
 4. **Visual candy**: portal animation screen recordings, glyph reveal flow
    (the booster-pack moment), server-rendered glyph SVGs.
 
+## 4b. The First Cultists drop (decided 2026-07-10)
+
+**What**: 250 hand-curated wallets receive 100 RITUAL each (one glyph's worth,
+"your first sacrifice, on us"). Sent as a direct Safe batch — no claim page, no
+faucet contract, no sybil surface. NOT an open airdrop; never call it free money.
+
+**Sizing rule**: total drop ≤ 1/3 of the epoch-1 threshold (25k of 75k), so free
+tokens can visibly move the portal but can never summon alone. Epoch-1 revenue
+floor with the drop: ~5.7 ETH (50k RITUAL of organic minting still required).
+
+**Eligibility = the funnel**: joined the Discord AND follows @thesummoningxyz
+during the drumbeat window, human-verified by the operator (250 is hand-checkable).
+The selection process is the acquisition engine; the cap is the urgency.
+
+**Costs**: token side ≈ net zero (treasury self-mints via its own curve and
+withdraws the ETH back; ~2.84 ETH round-trip, keep aside for the mint tx).
+Real cash cost = VRF LINK for ~250 single-glyph claims (~5-10 LINK) — watch the
+low-LINK alert during claim week; top up from the 10-LINK reserve.
+
+**Sequence**: announce cohort during Phase 1 → close the list at T0 minus ~3 days
+→ Safe batch-send before gathering opens → recipients burn during the ritual
+window (their 25k = the portal's opening third).
+
+**Back-pocket for epoch 2+**: the first-mint match ("mint 200+, receive 100 bonus")
+— sybil-proof at scale because qualifying requires paying real ETH into the curve.
+
 ## 5. Phase plan
 
 ### Phase 0 — Infrastructure (this week) ✅ = shipped
