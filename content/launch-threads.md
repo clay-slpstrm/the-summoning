@@ -49,9 +49,10 @@ Attach `brand/x-avatar.png` or portal art to 1/.
 > the Discord who follow the Herald. That is the whole rite.
 > discord.gg/GUvnJRwRkq
 
-> **3/** Why only 250? Because chosen means something farmed does not. One wallet
-> each, verified as human. No bots, no scripts. The glyphs you earn are provably
-> fair Chainlink VRF rolls. Even we cannot choose who pulls a Breach.
+> **3/** Why only 250? Open airdrops get farmed. A drop claimed by ten thousand
+> bot wallets means nothing, so we choose humans by hand. One wallet each. We
+> only choose who enters. What you pull is Chainlink VRF, provably random,
+> beyond even our reach.
 
 > **4/** What 100 $RITUAL buys: one sacrifice at the first summoning of Cthulhu,
 > one Eldritch Glyph with a random rune and tier, and a place in cult history as
