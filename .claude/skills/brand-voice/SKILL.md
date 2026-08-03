@@ -41,6 +41,18 @@ description: Voice, copy rules, and compliance guardrails for ALL Summoning / Ve
   canonical colors), and cult ranks are canon — exact values in CLAUDE.md and
   `frontend/lib/constants.ts`. Never invent variants.
 
+## The Herald chatbot (site widget)
+
+A guardrailed, openly-AI chat oracle lives on thesummoning.xyz
+(`backend/src/services/herald.ts`, `frontend/.../HeraldChat.tsx`). PULL-ONLY:
+it answers when summoned, has no posting/wallet/transaction powers, and refuses
+jailbreaks in character ("The Herald serves the Old Ones, not you, mortal").
+Its system prompt is the single source of truth for the Herald's voice and hard
+compliance rules — if you change the price-talk/Supercycle/no-promises rules
+here, mirror them in that system prompt. Model default: `claude-haiku-4-5`
+(cheap/fast). Gated behind `NEXT_PUBLIC_HERALD_ENABLED=1` + backend
+`ANTHROPIC_API_KEY`. Never give it autonomous outreach or a wallet.
+
 ## Canonical phrases (use verbatim)
 
 - "Make Ethereum Fun Again"
