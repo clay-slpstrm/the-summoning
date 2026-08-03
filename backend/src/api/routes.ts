@@ -7,6 +7,7 @@ import { CULT_RANKS, GLYPH_TIERS, RUNE_SHAPES, LORE_MESSAGES, OLD_ONES } from ".
 import { getHeartbeat } from "../lib/heartbeat.js";
 import { config } from "../config.js";
 import { renderGlyphSvg } from "../services/glyphSvg.js";
+import { heraldHandler } from "../services/herald.js";
 
 const prisma = new PrismaClient();
 
@@ -19,6 +20,9 @@ const PUBLIC_DIR = path.resolve(process.cwd(), "public");
 const HEALTH_MAX_LAG_MS = Number(process.env.HEALTH_MAX_LAG_MS || 30 * 60 * 1000);
 
 export function setupRoutes(app: Express): void {
+  // ── The Herald: guardrailed in-character chatbot (opt-in, pull-only) ──
+  app.post("/api/herald", heraldHandler);
+
   // ── Images ──
   //
   // Artifact images are static: 20 files in public/artifacts/{oldOneId}/{tierId}.{png|jpg|jpeg|webp}.

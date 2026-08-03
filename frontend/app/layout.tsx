@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import "./globals.css";
 import { WalletProvider } from "@/components/providers/WalletProvider";
 import { WebSocketProvider } from "@/components/providers/WebSocketProvider";
+import HeraldChat from "@/components/layout/HeraldChat";
 
 export const metadata: Metadata = {
   metadataBase: new URL("https://thesummoning.xyz"),
@@ -44,6 +45,7 @@ export default function RootLayout({
         <WalletProvider>
           <WebSocketProvider>{children}</WebSocketProvider>
         </WalletProvider>
+        <HeraldChat />
       </body>
     </html>
   );
