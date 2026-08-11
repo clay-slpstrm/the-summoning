@@ -1,7 +1,19 @@
 # RUNBOOK — Starting & Cycling Summoning Epochs
 
-> Operational checklist for opening each ritual on Ethereum mainnet.
-> Follow top-to-bottom every time. One epoch = 48h Gathering + 24h Ritual = 72h total.
+> **⚠️ SUPERSEDED PENDING REDEPLOY (design locked 2026-08-09).** This entire
+> manual-start procedure is being replaced by a **self-perpetuating** design:
+> epochs auto-start when someone sacrifices, thresholds escalate on-chain
+> (genesis 75k; WIN +150k; LOSS ×0.75, floor 25k), and the Old One advances
+> on win / retries on loss (loop 5→1). There is then **no owner in the loop** —
+> no `startEpoch`, no per-epoch threshold choice, no runbook to follow. The
+> First Cultists drop becomes the launch trigger. That contract change **ships
+> with the batched Veil Protocol redeploy** (one redeploy, not two); until it
+> deploys, the procedure below applies to the currently-live contract. See
+> `~/.claude/plans/polymorphic-knitting-kitten.md`.
+>
+> Operational checklist for opening each ritual on Ethereum mainnet (current
+> deployed contract). Follow top-to-bottom every time. One epoch = 48h Gathering
+> + 24h Ritual = 72h total.
 > **The clock starts the instant `startEpoch` executes** — do not execute until you
 > are ready to announce.
 

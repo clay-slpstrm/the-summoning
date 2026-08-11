@@ -1339,6 +1339,26 @@ User clicks "SACRIFICE" in SacrificePanel
 
 ### 6.2 Epoch Lifecycle Flow
 
+> **⚠️ CONFIRMED REDESIGN — self-perpetuating epochs (design locked 2026-08-09, NOT yet deployed).**
+> The lifecycle below describes the **currently-deployed** owner-driven contract.
+> A confirmed redesign makes the game demand-driven with no owner in the loop, and
+> **ships with the batched Veil Protocol contract redeploy** (do not redeploy twice).
+> The new loop:
+> - **No Gathering phase.** Minting is always-live (the curve is epoch-independent), so
+>   $RITUAL is stockpiled in the idle gap between summonings. The **first `commitRitual`**
+>   when no active/unresolved epoch exists auto-opens a **24h ritual window**
+>   (`ritualStart = now`) and counts as the opening contribution.
+> - **On-chain threshold.** Genesis **75k**. WIN → `threshold += 150k` (fixed additive,
+>   2× the original 75k → linear ramp 75k/225k/375k…). LOSS → `threshold × 0.75`, floor **25k**.
+>   Replaces the advisory 1.3×/0.8× `nextThreshold()` view.
+> - **On-chain Old One.** Advance 1→5 on win, retry same on loss, loop 5→1.
+> - **Resolution unchanged** (permissionless `resolveEpoch`/keeper); after resolution the
+>   contract sits idle with the next threshold pre-computed until the next sacrifice re-opens.
+> - The **First Cultists drop becomes the launch trigger** (a seeded wallet's sacrifice opens epoch 1).
+> See `~/.claude/plans/polymorphic-knitting-kitten.md` for the full plan and off-chain ripple.
+
+**Currently deployed (owner-driven) lifecycle:**
+
 ```
 Owner calls startEpoch(oldOneId, threshold)
    │
@@ -1663,6 +1683,10 @@ Step 39: Set up monitoring + alerting on backend                          ✅ im
              keeper itself is broken), low_keeper_eth (gas floor, 6h check).
              startEpoch remains a HUMAN Safe decision by design — the keeper
              prepares the next-epoch numbers but never starts epochs.
+             [CONFIRMED REDESIGN, pending redeploy — see §6.2: epochs will
+             auto-start on first sacrifice with on-chain threshold escalation,
+             so the keeper's next-threshold suggestion + the human-start flow
+             are removed; the keeper only resolves.]
 
          Pre-launch env wiring (backend/.env):
           - ALERT_WEBHOOK_URL=<Discord incoming webhook>

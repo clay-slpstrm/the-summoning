@@ -189,6 +189,15 @@ Buttons: bg gradient(135deg, #4c1d95, #7c3aed), uppercase, tracking-widest, seri
 
 ## Critical Implementation Notes
 
+> **⚠️ CONFIRMED REDESIGN pending redeploy (locked 2026-08-09) — self-perpetuating game.**
+> The epoch lifecycle is being changed from owner-driven to demand-driven: the first
+> `commitRitual` auto-starts a 24h ritual (no Gathering phase), thresholds escalate
+> on-chain (genesis 75k; WIN `+150k`; LOSS `×0.75`, floor 25k), and the Old One advances
+> on win / retries on loss (loop 5→1). No owner in the loop, no `startEpoch`, no RUNBOOK.
+> This ships **batched with the Veil Protocol contract changes** (one mainnet redeploy).
+> Notes below + CONTRACT_PARAMS (48h/24h durations, threshold policy) describe the
+> currently-deployed contract until then. See `~/.claude/plans/polymorphic-knitting-kitten.md`.
+
 1. **Glyphs are on-chain ERC-1155 NFTs** minted by the EldritchGlyphs contract via **Chainlink VRF**. Tier, rune, and lore are provably fair random assignments. The backend is an event indexer — it does NOT assign glyphs.
 
 2. **Sacrifice does NOT mint glyphs** (post-audit, C-01). `commitRitual()` is a pure burn: it destroys $RITUAL, updates `contributions[epochId][wallet]` and `lifetimeContribution[wallet]`, and issues no VRF request. Glyphs are claimed in a batch after the epoch resolves via `claimGlyphs(epochId)`, which issues ONE VRF request returning `contributions[epochId][wallet] / GLYPH_UNIT` random words (capped at MAX_GLYPHS_PER_CLAIM=20 — sized so the VRF callback fits under Chainlink V2.5's 2.5M gas ceiling; the original 50-cap from the audit was reduced after a Sepolia rehearsal caught a live OOG). Below 100 RITUAL of cumulative epoch contribution → zero glyphs (Initiate rank only). Per-epoch reset is automatic (contributions are keyed by epochId; never carry over).
