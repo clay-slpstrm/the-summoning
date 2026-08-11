@@ -52,3 +52,6 @@ subgraph/build/
 
 # TypeScript incremental cache
 *.tsbuildinfo
+
+# Local private planning docs (not for publication)
+private/
