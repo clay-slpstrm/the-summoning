@@ -10,15 +10,23 @@ import "./interfaces/IElderArtifacts.sol";
 import "./interfaces/IEldritchGlyphs.sol";
 
 /// @title SummoningEngine
-/// @notice Core gameplay contract. Manages epoch lifecycle: Gathering → Ritual → Resolved.
-///         Players burn $RITUAL via commitRitual during the Ritual phase — sacrifices are
-///         pure burns: they accumulate epoch contribution and lifetime contribution, but
-///         issue no VRF requests and mint no glyphs.
+/// @notice Core gameplay contract. Self-perpetuating epoch lifecycle: the game runs itself
+///         with no owner in the loop. When no epoch is active (currentEpochId == 0) or the
+///         current epoch is resolved, the next commitRitual auto-opens a fresh 24h ritual
+///         window (the Gathering phase is collapsed — minting is always-live via the bonding
+///         curve, so tokens accumulate in the idle gap between summonings). The opening
+///         sacrifice both starts the epoch and counts as its first contribution.
+///         Sacrifices are pure burns: they accumulate epoch contribution and lifetime
+///         contribution, but issue no VRF requests and mint no glyphs.
 ///         After the epoch resolves, participants call claimGlyphs(epochId) to batch-mint
 ///         one glyph per GLYPH_UNIT of epoch contribution (one VRF request per call, capped
 ///         at MAX_GLYPHS_PER_CLAIM). Separately, claimReward(epochId) mints the ERC-1155
 ///         artifact for the wallet's tier.
-///         Implements Chainlink Automation for automatic epoch resolution.
+///         The threshold and Old One escalate on-chain: a win raises the threshold by a fixed
+///         WIN_INCREMENT and advances the Old One (looping 5→1); a loss decays the threshold
+///         ×0.75 (floored at THRESHOLD_FLOOR) and retries the same Old One.
+///         Resolution is permissionless (anyone / the self-hosted keeper calls resolveEpoch);
+///         the Chainlink Automation hooks remain as an alternative resolution path.
 contract SummoningEngine is Ownable, ReentrancyGuard, Pausable, AutomationCompatibleInterface {
 
     // ── Epoch State ──────────────────────────────────────────────────────────
@@ -82,8 +90,17 @@ contract SummoningEngine is Ownable, ReentrancyGuard, Pausable, AutomationCompat
     uint256 public constant GLYPH_UNIT            = 100e18;   // 100 $RITUAL per glyph earned (and qualification threshold)
     uint256 public constant MAX_GLYPHS_PER_CLAIM  = 20;       // mirrors EldritchGlyphs.MAX_GLYPHS_PER_REQUEST; sized for the 2.5M VRF callback budget
     uint256 public constant SACRIFICE_COOLDOWN    = 30;       // seconds between sacrifices per wallet
-    uint256 public constant FAILURE_REDUCTION_BPS = 2000;    // 20% threshold reduction on failure
-    uint256 public constant ESCALATION_BPS        = 13000;   // 1.3× threshold increase on success
+
+    // ── Self-perpetuating escalation ─────────────────────────────────────────
+    // Epoch 1 opens at GENESIS_THRESHOLD. Each success adds a FIXED WIN_INCREMENT
+    // (a linear ramp off the prior threshold, not a multiplier): 75k → 225k → 375k…
+    // Each failure decays the threshold ×0.75, floored at THRESHOLD_FLOOR so a
+    // summoning is always reachable. Old One advances 1→OLD_ONE_COUNT on a win
+    // (looping back to 1) and retries the same on a loss.
+    uint256 public constant GENESIS_THRESHOLD     = 75_000e18;   // epoch 1 threshold
+    uint256 public constant WIN_INCREMENT         = 150_000e18;  // +2× genesis added on each success
+    uint256 public constant THRESHOLD_FLOOR       = 25_000e18;   // minimum threshold after failure decay
+    uint256 public constant OLD_ONE_COUNT         = 5;           // number of Old Ones in the rotation
 
     // ── Events ───────────────────────────────────────────────────────────────
 
@@ -120,7 +137,9 @@ contract SummoningEngine is Ownable, ReentrancyGuard, Pausable, AutomationCompat
 
     // ── Constructor ──────────────────────────────────────────────────────────
 
-    /// @param _gatheringDuration Seconds in the Gathering phase. Mainnet: 48 hours.
+    /// @param _gatheringDuration Seconds in the Gathering phase. Self-perpetuating mainnet
+    ///        deploys use 0 (Gathering collapsed — the first sacrifice opens the ritual
+    ///        directly). A positive value re-introduces a pre-ritual gather window.
     /// @param _ritualDuration    Seconds in the Ritual phase. Mainnet: 24 hours.
     constructor(
         address _token,
@@ -133,9 +152,9 @@ contract SummoningEngine is Ownable, ReentrancyGuard, Pausable, AutomationCompat
         if (_token == address(0) || _artifacts == address(0) || _glyphs == address(0)) {
             revert SummoningEngine__ZeroAddress();
         }
-        // Guard against zero-duration deploys (would brick the lifecycle) but otherwise
-        // accept any positive values — Sepolia rehearsals use minutes, mainnet uses hours.
-        if (_gatheringDuration == 0 || _ritualDuration == 0) revert SummoningEngine__InvalidDuration();
+        // The ritual window must be positive (a zero-duration ritual would brick the
+        // lifecycle). Gathering may be 0 — the self-perpetuating design collapses it.
+        if (_ritualDuration == 0) revert SummoningEngine__InvalidDuration();
 
         ritualToken = IRitualToken(_token);
         artifacts = IElderArtifacts(_artifacts);
@@ -158,9 +177,14 @@ contract SummoningEngine is Ownable, ReentrancyGuard, Pausable, AutomationCompat
         _unpause();
     }
 
-    // ── Epoch Management (Owner) ─────────────────────────────────────────────
+    // ── Epoch Management (Owner override) ────────────────────────────────────
 
-    /// @notice Start a new epoch. Begins the Gathering phase immediately.
+    /// @notice Bootstrap/emergency override: force-start an epoch with an explicit Old One and
+    ///         threshold. NOT required for normal play — commitRitual auto-opens epochs on its
+    ///         own (see _openNextEpoch). Retained so the owner can seed a custom genesis or
+    ///         intervene after an incident. Opens the ritual window immediately (ritualStart =
+    ///         now + GATHERING_DURATION, i.e. now when Gathering is collapsed). The next
+    ///         auto-open derives its threshold/Old One from whatever this override sets.
     /// @param oldOneId Identifier for which Old One is being summoned (passed through to artifacts).
     /// @param threshold Minimum $RITUAL (18 decimals) required for a successful summoning.
     function startEpoch(uint256 oldOneId, uint256 threshold) external onlyOwner {
@@ -199,12 +223,20 @@ contract SummoningEngine is Ownable, ReentrancyGuard, Pausable, AutomationCompat
     ///         Caller must have approved this contract for at least `amount` $RITUAL.
     /// @param amount Token amount (18 decimals) to sacrifice. Must be >= MIN_SACRIFICE.
     function commitRitual(uint256 amount) external nonReentrant whenNotPaused {
-        if (currentEpochId == 0) revert SummoningEngine__NoActiveEpoch();
+        // Self-perpetuating auto-start: if no epoch has ever opened, or the current one is
+        // already resolved, this sacrifice opens the next epoch (threshold + Old One derived
+        // on-chain from the prior outcome) before it is counted. No owner call required.
+        if (currentEpochId == 0 || epochs[currentEpochId].resolved) {
+            _openNextEpoch();
+        }
 
         uint256 id = currentEpochId;
         Epoch storage epoch = epochs[id];
 
-        // Must be in Ritual phase (between ritualStart and ritualEnd)
+        // Must be in the Ritual window (between ritualStart and ritualEnd). A just-opened
+        // epoch has ritualStart == now (Gathering collapsed), so the opening sacrifice passes.
+        // A closed-but-unresolved epoch reverts here until resolveEpoch runs — the next
+        // sacrifice then auto-opens a fresh epoch via the branch above.
         if (block.timestamp < epoch.ritualStart || block.timestamp >= epoch.ritualEnd) {
             revert SummoningEngine__InvalidPhase();
         }
@@ -265,8 +297,9 @@ contract SummoningEngine is Ownable, ReentrancyGuard, Pausable, AutomationCompat
     }
 
     /// @notice Resolve the current epoch after the ritual window closes.
-    ///         Permissionless — anyone can call once ritualEnd has passed.
-    ///         In production, Chainlink Automation calls this automatically.
+    ///         Permissionless — anyone can call once ritualEnd has passed. In production the
+    ///         self-hosted epoch keeper calls this automatically; the next commitRitual then
+    ///         auto-opens the following epoch.
     function resolveEpoch() external {
         if (currentEpochId == 0) revert SummoningEngine__NoActiveEpoch();
 
@@ -381,21 +414,80 @@ contract SummoningEngine is Ownable, ReentrancyGuard, Pausable, AutomationCompat
         return _contributors[epochId];
     }
 
-    /// @notice Compute the next epoch's threshold based on the current epoch's outcome.
-    ///         Useful for the owner when calling startEpoch for the next round.
+    /// @notice The threshold the next auto-opened epoch will use — what the UI shows as the
+    ///         "next summoning" target during the idle gap.
+    /// @dev Before epoch 1 → GENESIS_THRESHOLD. While the current epoch is unresolved → 0
+    ///      (the next threshold isn't determined until this one settles). After resolution →
+    ///      the escalated/decayed value the next commitRitual will stamp in.
     function nextThreshold() external view returns (uint256) {
-        if (currentEpochId == 0) return 0;
+        if (currentEpochId == 0) return GENESIS_THRESHOLD;
         Epoch storage epoch = epochs[currentEpochId];
         if (!epoch.resolved) return 0;
-
-        if (epoch.successful) {
-            return (epoch.threshold * ESCALATION_BPS) / 10_000;
-        } else {
-            return (epoch.threshold * (10_000 - FAILURE_REDUCTION_BPS)) / 10_000;
-        }
+        return _computeNextThreshold(epoch.threshold, epoch.successful);
     }
 
     // ── Internal ─────────────────────────────────────────────────────────────
+
+    /// @dev Auto-open the next epoch (demand-driven, called from commitRitual). Derives the
+    ///      threshold and Old One from the prior resolved epoch, or genesis defaults when no
+    ///      epoch has opened yet. The ritual window opens immediately: ritualStart =
+    ///      now + GATHERING_DURATION (== now when Gathering is collapsed to 0).
+    function _openNextEpoch() internal {
+        uint256 priorId = currentEpochId;
+
+        uint256 newOldOneId;
+        uint256 newThreshold;
+        if (priorId == 0) {
+            newOldOneId = 1;                       // genesis: first Old One
+            newThreshold = GENESIS_THRESHOLD;
+        } else {
+            Epoch storage prior = epochs[priorId]; // guaranteed resolved by the caller
+            newOldOneId = _computeNextOldOne(prior.oldOneId, prior.successful);
+            newThreshold = _computeNextThreshold(prior.threshold, prior.successful);
+        }
+
+        uint256 id = priorId + 1;
+        currentEpochId = id;
+
+        epochs[id] = Epoch({
+            oldOneId: newOldOneId,
+            threshold: newThreshold,
+            totalCommitted: 0,
+            gatheringStart: block.timestamp,
+            ritualStart: block.timestamp + GATHERING_DURATION,
+            ritualEnd: block.timestamp + GATHERING_DURATION + RITUAL_DURATION,
+            successful: false,
+            resolved: false,
+            participantCount: 0
+        });
+
+        emit EpochStarted(id, newOldOneId, newThreshold, block.timestamp);
+    }
+
+    /// @dev Next threshold from the prior outcome. WIN: prior + WIN_INCREMENT (linear ramp).
+    ///      LOSS: prior ×0.75, floored at THRESHOLD_FLOOR so a summoning stays reachable.
+    function _computeNextThreshold(uint256 priorThreshold, bool priorSuccess)
+        internal
+        pure
+        returns (uint256)
+    {
+        if (priorSuccess) {
+            return priorThreshold + WIN_INCREMENT;
+        }
+        uint256 decayed = (priorThreshold * 3) / 4;
+        return decayed < THRESHOLD_FLOOR ? THRESHOLD_FLOOR : decayed;
+    }
+
+    /// @dev Next Old One from the prior outcome. WIN: advance, looping OLD_ONE_COUNT → 1.
+    ///      LOSS: retry the same Old One ("the cult regroups").
+    function _computeNextOldOne(uint256 priorOldOneId, bool priorSuccess)
+        internal
+        pure
+        returns (uint256)
+    {
+        if (!priorSuccess) return priorOldOneId;
+        return priorOldOneId >= OLD_ONE_COUNT ? 1 : priorOldOneId + 1;
+    }
 
     /// @dev Determines reward tier from contribution percentile.
     ///      Failed epochs always yield tierId 0 (Shattered Ritual).

@@ -38,6 +38,7 @@ const chain = config.CHAIN_ID === 1 ? mainnet : sepolia;
 const ENGINE_ABI = parseAbi([
   "function currentEpochId() view returns (uint256)",
   "function getEpoch(uint256 epochId) view returns (uint256 oldOneId, uint256 threshold, uint256 totalCommitted, uint256 gatheringStart, uint256 ritualStart, uint256 ritualEnd, bool successful, bool resolved, uint256 participantCount)",
+  "function nextThreshold() view returns (uint256)",
   "function resolveEpoch()",
 ]);
 
@@ -71,19 +72,6 @@ export function shouldResolve(
   nowSec: bigint
 ): boolean {
   return !epoch.resolved && nowSec >= epoch.ritualEnd;
-}
-
-/**
- * Season-one threshold policy (RUNBOOK.md Part 2): double on success, halve on
- * failure, floor 25k RITUAL. A SUGGESTION for the human operating the Safe —
- * startEpoch is onlyOwner and deliberately NOT automated. Exported for tests.
- */
-const THRESHOLD_FLOOR = 25_000n * 10n ** 18n;
-
-export function suggestNextThreshold(threshold: bigint, successful: boolean): bigint {
-  if (successful) return threshold * 2n;
-  const halved = threshold / 2n;
-  return halved < THRESHOLD_FLOOR ? THRESHOLD_FLOOR : halved;
 }
 
 export function startEpochKeeper(): void {
@@ -145,8 +133,10 @@ export function startEpochKeeper(): void {
 
       if (receipt.status === "success") {
         console.log(`[KEEPER] Epoch ${epochId} resolved in tx ${hash}`);
-        // Re-read the settled epoch so the alert carries the outcome and the
-        // season-policy suggestion. The HUMAN starts the next epoch (Safe).
+        // Re-read the settled epoch for the outcome, plus the on-chain next threshold.
+        // No human action follows: the next sacrifice auto-opens the next epoch with
+        // the escalated/decayed threshold and Old One derived on-chain. This alert is
+        // purely informational.
         const [oldOneId, threshold, totalCommitted, , , , successful] =
           await publicClient.readContract({
             address: engine,
@@ -154,8 +144,12 @@ export function startEpochKeeper(): void {
             functionName: "getEpoch",
             args: [epochId],
           });
+        const nextT = await publicClient.readContract({
+          address: engine,
+          abi: ENGINE_ABI,
+          functionName: "nextThreshold",
+        });
         const fmt = (wei: bigint) => `${Number(wei / 10n ** 18n).toLocaleString()} RITUAL`;
-        const suggested = suggestNextThreshold(threshold, successful);
         await sendAlert({
           type: "epoch_resolved",
           summary: `Epoch ${epochId} resolved: ${successful ? "SUMMONED" : "FAILED"} (${fmt(totalCommitted)} of ${fmt(threshold)})`,
@@ -164,11 +158,11 @@ export function startEpochKeeper(): void {
             outcome: successful ? "successful" : "failed",
             totalCommitted: fmt(totalCommitted),
             threshold: fmt(threshold),
+            oldOneId: oldOneId.toString(),
             tx: hash,
-            nextEpochSuggestion: successful
-              ? `${fmt(suggested)} (2x policy), next Old One in the arc (current was ${oldOneId})`
-              : `${fmt(suggested)} (0.5x policy, floor 25k), retry same Old One ${oldOneId}`,
-            reminder: "startEpoch is a Safe decision — see RUNBOOK.md Parts 1-3 before starting",
+            nextThreshold: `${fmt(nextT)} — auto-opens on the next sacrifice (${
+              successful ? "Old One advances" : "same Old One retries"
+            }). No action needed.`,
           },
         });
       } else {

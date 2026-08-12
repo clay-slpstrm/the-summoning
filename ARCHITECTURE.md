@@ -351,7 +351,12 @@ contract SummoningEngine is Ownable, ReentrancyGuard, Pausable, AutomationCompat
     uint256 public constant GLYPH_UNIT           = 100e18;    // 100 RITUAL per glyph (qualification + divisor)
     uint256 public constant MAX_GLYPHS_PER_CLAIM = 20;        // mirrors EldritchGlyphs.MAX_GLYPHS_PER_REQUEST; sized for Chainlink V2.5's 2.5M ceiling
     uint256 public constant SACRIFICE_COOLDOWN   = 30;
-    // ... GATHERING_DURATION, RITUAL_DURATION, FAILURE_REDUCTION_BPS, ESCALATION_BPS unchanged ...
+    // Self-perpetuating escalation (replaces the old advisory FAILURE_REDUCTION_BPS/ESCALATION_BPS):
+    uint256 public constant GENESIS_THRESHOLD    = 75_000e18;   // epoch 1 target
+    uint256 public constant WIN_INCREMENT        = 150_000e18;  // +2× genesis per win (linear ramp)
+    uint256 public constant THRESHOLD_FLOOR      = 25_000e18;   // loss decay floor
+    uint256 public constant OLD_ONE_COUNT        = 5;           // rotation length (advance-on-win, loop 5→1)
+    // GATHERING_DURATION (immutable, 0 on mainnet — collapsed) and RITUAL_DURATION (24h) are constructor-set.
 
     // Epoch state
     mapping(uint256 => mapping(address => uint256)) public contributions;          // epochId => wallet => burn
@@ -367,12 +372,16 @@ contract SummoningEngine is Ownable, ReentrancyGuard, Pausable, AutomationCompat
     );
     error SummoningEngine__NoGlyphsEarned();
 
-    constructor(address _token, address _artifacts, address _glyphs, address _owner) Ownable(_owner) { ... }
+    constructor(address _token, address _artifacts, address _glyphs, address _owner,
+                uint256 _gatheringDuration, uint256 _ritualDuration) Ownable(_owner) { ... }
 
     function pause()   external onlyOwner { _pause(); }
     function unpause() external onlyOwner { _unpause(); }
 
     function commitRitual(uint256 amount) external nonReentrant whenNotPaused {
+        // Self-perpetuating auto-start: open the next epoch if none is active or the
+        // current one is resolved (threshold + Old One derived on-chain), then count this burn.
+        if (currentEpochId == 0 || epochs[currentEpochId].resolved) _openNextEpoch();
         // ... phase/min/cooldown/balance checks ...
         if (contributions[id][msg.sender] == 0) {
             _contributors[id].push(msg.sender);
@@ -468,17 +477,25 @@ contract SummoningEngine is Ownable, ReentrancyGuard, Pausable, AutomationCompat
         return _contributors[epochId];
     }
 
-    /// @notice Compute the suggested threshold for the next epoch based on current outcome.
-    ///         Returns 0 if no epoch exists or the current epoch is unresolved.
+    /// @notice The threshold the next auto-opened epoch will use (what the UI previews while idle).
+    ///         GENESIS_THRESHOLD before epoch 1; 0 while the current epoch is unresolved; else the
+    ///         escalated/decayed value _openNextEpoch will stamp in.
     function nextThreshold() external view returns (uint256) {
-        if (currentEpochId == 0 || !epochs[currentEpochId].resolved) return 0;
+        if (currentEpochId == 0) return GENESIS_THRESHOLD;
         Epoch storage epoch = epochs[currentEpochId];
-        if (epoch.successful) {
-            return (epoch.threshold * ESCALATION_BPS) / 10_000;
-        } else {
-            return (epoch.threshold * (10_000 - FAILURE_REDUCTION_BPS)) / 10_000;
-        }
+        if (!epoch.resolved) return 0;
+        return _computeNextThreshold(epoch.threshold, epoch.successful);
     }
+
+    // ── Self-perpetuating internals ──
+    // _openNextEpoch(): increments currentEpochId, derives threshold via _computeNextThreshold
+    //   and Old One via _computeNextOldOne (genesis defaults for epoch 1), stamps
+    //   ritualStart = now, ritualEnd = now + RITUAL_DURATION, emits EpochStarted.
+    // _computeNextThreshold(prior, success): success → prior + WIN_INCREMENT;
+    //   loss → max(prior * 3/4, THRESHOLD_FLOOR).
+    // _computeNextOldOne(priorId, success): success → priorId >= OLD_ONE_COUNT ? 1 : priorId + 1;
+    //   loss → priorId (retry).
+    // startEpoch(oldOneId, threshold) is retained as an onlyOwner bootstrap/emergency override.
 }
 ```
 
@@ -493,7 +510,7 @@ contract SummoningEngine is Ownable, ReentrancyGuard, Pausable, AutomationCompat
 - All custom errors are prefixed with `SummoningEngine__` for clarity in multi-contract traces.
 - `claimReward` no longer zeros contribution (claimGlyphs needs it). Double-claim guarded by `rewardClaimed[epochId][wallet]` instead.
 - `getContributors(epochId)` returns the full contributor address list for off-chain use.
-- `nextThreshold()` surfaces the escalation/reduction math so the owner doesn't need to compute it manually.
+- Self-perpetuating: `commitRitual` auto-opens the next epoch (demand-driven, no owner call); threshold + Old One escalate on-chain via `_computeNextThreshold` (+150k win / ×0.75 loss floored at 25k) and `_computeNextOldOne` (advance-on-win looping, retry-on-loss). `nextThreshold()` previews the next target; `startEpoch` remains an `onlyOwner` override only.
 
 ---
 
@@ -1183,7 +1200,7 @@ export async function updateCultRank(wallet: string) {
 
 #### page.tsx (Home)
 - Hero/onboarding section for disconnected users: pitch text with colored keywords + "How it works" link to `/about`
-- During Gathering phase with wallet connected: shows guidance card ("Sacrifice opens soon") instead of hidden SacrificePanel
+- When idle (no active summoning) with wallet connected: shows the BeginSummoning panel — the first sacrifice auto-opens the next epoch (previews next Old One + nextThreshold())
 - MintInterface success state auto-resets after 4s with glowing feedback container and green button
 
 #### about/page.tsx
@@ -1339,54 +1356,48 @@ User clicks "SACRIFICE" in SacrificePanel
 
 ### 6.2 Epoch Lifecycle Flow
 
-> **⚠️ CONFIRMED REDESIGN — self-perpetuating epochs (design locked 2026-08-09, NOT yet deployed).**
-> The lifecycle below describes the **currently-deployed** owner-driven contract.
-> A confirmed redesign makes the game demand-driven with no owner in the loop, and
-> **ships with the batched Veil Protocol contract redeploy** (do not redeploy twice).
-> The new loop:
-> - **No Gathering phase.** Minting is always-live (the curve is epoch-independent), so
->   $RITUAL is stockpiled in the idle gap between summonings. The **first `commitRitual`**
->   when no active/unresolved epoch exists auto-opens a **24h ritual window**
->   (`ritualStart = now`) and counts as the opening contribution.
-> - **On-chain threshold.** Genesis **75k**. WIN → `threshold += 150k` (fixed additive,
->   2× the original 75k → linear ramp 75k/225k/375k…). LOSS → `threshold × 0.75`, floor **25k**.
->   Replaces the advisory 1.3×/0.8× `nextThreshold()` view.
-> - **On-chain Old One.** Advance 1→5 on win, retry same on loss, loop 5→1.
-> - **Resolution unchanged** (permissionless `resolveEpoch`/keeper); after resolution the
->   contract sits idle with the next threshold pre-computed until the next sacrifice re-opens.
-> - The **First Cultists drop becomes the launch trigger** (a seeded wallet's sacrifice opens epoch 1).
-> See `~/.claude/plans/polymorphic-knitting-kitten.md` for the full plan and off-chain ripple.
+> **⚠️ SELF-PERPETUATING LIFECYCLE — implemented in source (2026-08-12), NOT yet on mainnet.**
+> The flow below is the **new demand-driven design**, with no owner in the loop. It is built
+> and tested in the repo but the **deployed mainnet contract is still the old owner-driven
+> engine** — this takes effect on the pending engine-only redeploy (new `SummoningEngine` +
+> Safe `glyphs.setEngine`/`artifacts.setEngine`; Sepolia rehearsal first). It ships
+> **independently** of the Veil Protocol (decoupled — Veil is separate contracts funded by a
+> treasury RITUAL reserve). See `~/.claude/plans/polymorphic-knitting-kitten.md`.
+> Key points: no Gathering phase (`GATHERING_DURATION = 0`); the first `commitRitual` when no
+> epoch is active/unresolved auto-opens a 24h ritual and counts as the opening contribution;
+> threshold + Old One escalate on-chain; resolution stays permissionless; the First Cultists
+> drop is the launch trigger (a seeded wallet's sacrifice opens epoch 1).
 
-**Currently deployed (owner-driven) lifecycle:**
+**Self-perpetuating lifecycle:**
 
 ```
-Owner calls startEpoch(oldOneId, threshold)
+Idle (no epoch active, or the current one is resolved) — minting always open on the curve
    │
-   ├─→ Gathering Phase (48h)
-   │     ├─ Frontend: Shows countdown to Ritual phase
-   │     ├─ Users: Mint $RITUAL via MintingCurve
-   │     └─ Portal: Dormant state, ambient rotation only
+   ├─→ First commitRitual auto-opens the next epoch  (_openNextEpoch)
+   │     ├─ threshold: genesis 75k, else prior +150k (win) / ×0.75 floored 25k (loss)
+   │     ├─ oldOneId:  genesis Cthulhu(1), else advance-on-win (loop 5→1) / retry-on-loss
+   │     ├─ ritualStart = now, ritualEnd = now + 24h  (Gathering collapsed)
+   │     └─ the opening sacrifice is counted as contribution #1
    │
-   ├─→ Ritual Phase (24h)  [block.timestamp >= ritualStart]
-   │     ├─ Frontend: Sacrifice interface becomes active
-   │     ├─ Users: Call commitRitual() → get glyphs
-   │     ├─ Portal: Evolves through stages based on totalCommitted/threshold
-   │     └─ Backend: Broadcasts epoch_update via WebSocket on each sacrifice
+   ├─→ Ritual Phase (24h)  [ritualStart ≤ now < ritualEnd]
+   │     ├─ Frontend: SacrificePanel active (idle state showed BeginSummoning)
+   │     ├─ Users: commitRitual() — pure burn, accumulates contribution
+   │     ├─ Portal: evolves through stages by totalCommitted/threshold
+   │     └─ Backend: broadcasts ritual_sacrifice via WebSocket on each burn
    │
-   ├─→ Resolution  [block.timestamp >= ritualEnd]
-   │     ├─ Backend epoch keeper calls resolveEpoch() automatically
-   │     │   (epochKeeper.ts polls every 60s; sends past ritualEnd + unresolved;
+   ├─→ Resolution  [now ≥ ritualEnd]
+   │     ├─ Self-hosted epoch keeper calls resolveEpoch() automatically
+   │     │   (epochKeeper.ts polls every 60s; permissionless — anyone can call;
    │     │    epoch_resolution_overdue alert at 30 min if it hasn't landed)
-   │     │   Falls back to manual: resolveEpoch() is permissionless, anyone can call
-   │     ├─ Contract: Compares totalCommitted vs threshold
-   │     │   ├─ Success: epoch.successful = true
-   │     │   └─ Failure: epoch.successful = false
-   │     └─ Frontend: Shows result screen (breach animation or failure)
+   │     ├─ Contract: successful = totalCommitted >= threshold
+   │     └─ Frontend: result screen; keeper's epoch_resolved alert reports next threshold (info only)
    │
-   └─→ Claim Phase
-         ├─ Users call claimReward(epochId)
-         │   └─ ERC-1155 artifact minted based on contribution tier
-         └─ Owner starts next epoch (threshold adjusted by 1.3x or 0.8x)
+   ├─→ Claim Phase (on the resolved epoch)
+   │     ├─ claimReward(epochId)  → ERC-1155 artifact by contribution tier
+   │     └─ claimGlyphs(epochId)  → batched VRF glyph mint
+   │
+   └─→ Back to Idle: contract sits with nextThreshold() pre-computed until the
+         next sacrifice auto-opens the following epoch. Loop forever, no Safe.
 ```
 
 ---
@@ -1399,7 +1410,7 @@ Owner calls startEpoch(oldOneId, threshold)
 contracts/test/
 ├── RitualToken.t.sol        # Mint, burn, access control
 ├── MintingCurve.t.sol       # Price curve math, withdrawal, slippage
-├── SummoningEngine.t.sol    # Full epoch lifecycle, contributions, rewards, Automation (71 tests)
+├── SummoningEngine.t.sol    # Epoch lifecycle, auto-start, on-chain escalation, contributions, rewards (104 tests)
 ├── ElderArtifacts.t.sol     # Minting, token IDs, URI generation (36 tests)
 ├── EldritchGlyphs.t.sol     # VRF flow, tier distribution, royalties, transfers (85 tests)
 └── Integration.t.sol        # Full flow: mint → sacrifice → resolve → claim
@@ -1678,15 +1689,14 @@ Step 39: Set up monitoring + alerting on backend                          ✅ im
              (60s); past ritualEnd + unresolved → simulate + send the
              permissionless resolveEpoch() from KEEPER_PRIVATE_KEY (gas-only
              wallet, zero protocol authority). Alerts: epoch_resolved (with
-             outcome + season-policy next-threshold suggestion), keeper_error,
-             epoch_resolution_overdue (30-min watchdog, fires even if the
-             keeper itself is broken), low_keeper_eth (gas floor, 6h check).
-             startEpoch remains a HUMAN Safe decision by design — the keeper
-             prepares the next-epoch numbers but never starts epochs.
-             [CONFIRMED REDESIGN, pending redeploy — see §6.2: epochs will
-             auto-start on first sacrifice with on-chain threshold escalation,
-             so the keeper's next-threshold suggestion + the human-start flow
-             are removed; the keeper only resolves.]
+             outcome + the on-chain nextThreshold() reported as info only),
+             keeper_error, epoch_resolution_overdue (30-min watchdog, fires
+             even if the keeper itself is broken), low_keeper_eth (gas floor,
+             6h check). The keeper ONLY resolves — it never starts epochs.
+             In the self-perpetuating design (§6.2, built 2026-08-12) epochs
+             auto-open on the next sacrifice with on-chain threshold escalation,
+             so the old human-start flow and the keeper's suggestNextThreshold
+             are removed. startEpoch survives only as an onlyOwner override.
 
          Pre-launch env wiring (backend/.env):
           - ALERT_WEBHOOK_URL=<Discord incoming webhook>
@@ -1717,8 +1727,10 @@ Step 40: Begin teaser campaign on Twitter/X
 ```
 Step 41: Apply audit fixes (if any)
 Step 42: Final mainnet deployment with production parameters
-Step 43: Configure first epoch: Cthulhu, threshold calibrated to expected participation
-Step 44: Announce first epoch, open minting
+Step 43: (self-perpetuating) No manual first-epoch config — genesis threshold (75k)
+        and Cthulhu are on-chain; the first sacrifice opens epoch 1. The First Cultists
+        drop is the launch trigger.
+Step 44: Announce launch, open minting
 Step 45: Host launch event (Twitter Space during final ritual hour)
 Step 46: Monitor, respond to issues, celebrate
 ```
@@ -1768,12 +1780,17 @@ export const CONTRACT_PARAMS = {
   BASE_PRICE: 0.0001,           // ETH per token
   SCALE_FACTOR: 100_000_000,
   PROTOCOL_FEE_BPS: 1200,       // 12%
-  GATHERING_DURATION: 48 * 3600, // mainnet value — immutable, constructor-set (Sepolia uses 5 min)
-  RITUAL_DURATION:    24 * 3600, // mainnet value — immutable, constructor-set (Sepolia uses 5 min)
+  GATHERING_DURATION: 0,         // Gathering collapsed — self-perpetuating; immutable, constructor-set
+  RITUAL_DURATION:    24 * 3600, // mainnet value — immutable, constructor-set (Sepolia uses minutes)
   MIN_SACRIFICE: 1,              // $RITUAL — low-barrier participation
   GLYPH_UNIT: 100,               // $RITUAL per glyph earned (qualification threshold + count divisor)
   MAX_GLYPHS_PER_CLAIM: 20,      // VRF callback gas cap (Chainlink V2.5 ceiling ~2.5M; 20 batch = ~2.04M measured)
   SACRIFICE_COOLDOWN: 30,        // seconds
   RITUAL_TOKEN_MAX_SUPPLY: 1_000_000_000, // 1B cap (H-05)
+  // Self-perpetuating on-chain escalation:
+  GENESIS_THRESHOLD: 75_000,     // $RITUAL — epoch 1 target
+  WIN_INCREMENT: 150_000,        // +$RITUAL per win (linear ramp)
+  THRESHOLD_FLOOR: 25_000,       // $RITUAL — loss decay (×0.75) floor
+  OLD_ONE_COUNT: 5,              // Old One rotation length (advance-on-win loop, retry-on-loss)
 };
 ```

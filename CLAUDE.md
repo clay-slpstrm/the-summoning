@@ -151,13 +151,20 @@ CONTRACT_PARAMS:
   BASE_PRICE             — 0.0001 ETH
   SCALE_FACTOR           — 100,000,000
   PROTOCOL_FEE           — 12% (1200 BPS)
-  GATHERING_DURATION     — 48 hours
+  GATHERING_DURATION     — 0 (Gathering collapsed — self-perpetuating; first sacrifice opens the ritual)
   RITUAL_DURATION        — 24 hours
   MIN_SACRIFICE          — 1 $RITUAL (low-barrier participation)
   GLYPH_UNIT             — 100 $RITUAL (qualification threshold + count divisor)
   MAX_GLYPHS_PER_CLAIM   — 20 (sized for Chainlink V2.5's 2.5M callback gas ceiling; measured)
   SACRIFICE_COOLDOWN     — 30 seconds
   RITUAL_TOKEN_MAX_SUPPLY — 1,000,000,000 $RITUAL (1B hard cap, H-05)
+
+SELF-PERPETUATING EPOCH ESCALATION (on-chain, no owner in the loop):
+  GENESIS_THRESHOLD      — 75,000 $RITUAL (epoch 1)
+  WIN_INCREMENT          — +150,000 $RITUAL per success (FIXED additive off prior → linear ramp: 75k/225k/375k…)
+  THRESHOLD (loss)       — prior × 0.75, floored at THRESHOLD_FLOOR (geometric decay)
+  THRESHOLD_FLOOR        — 25,000 $RITUAL (a summoning is always reachable)
+  OLD_ONE_COUNT          — 5 (Old One advances 1→5 on win, loops 5→1; retries same on loss)
 
 ERC-1155 TOKEN IDS:
   Format: epochId * 1000 + tierId
@@ -189,14 +196,18 @@ Buttons: bg gradient(135deg, #4c1d95, #7c3aed), uppercase, tracking-widest, seri
 
 ## Critical Implementation Notes
 
-> **⚠️ CONFIRMED REDESIGN pending redeploy (locked 2026-08-09) — self-perpetuating game.**
-> The epoch lifecycle is being changed from owner-driven to demand-driven: the first
-> `commitRitual` auto-starts a 24h ritual (no Gathering phase), thresholds escalate
-> on-chain (genesis 75k; WIN `+150k`; LOSS `×0.75`, floor 25k), and the Old One advances
-> on win / retries on loss (loop 5→1). No owner in the loop, no `startEpoch`, no RUNBOOK.
-> This ships **batched with the Veil Protocol contract changes** (one mainnet redeploy).
-> Notes below + CONTRACT_PARAMS (48h/24h durations, threshold policy) describe the
-> currently-deployed contract until then. See `~/.claude/plans/polymorphic-knitting-kitten.md`.
+> **⚠️ SELF-PERPETUATING REDESIGN — implemented in source, NOT yet on mainnet (built 2026-08-12).**
+> The epoch lifecycle is now demand-driven with no owner in the loop: the first
+> `commitRitual` (when no epoch is active or the current one is resolved) auto-opens a 24h
+> ritual (Gathering collapsed, `GATHERING_DURATION = 0`), thresholds escalate on-chain
+> (genesis 75k; WIN `+150k` linear; LOSS `×0.75`, floor 25k), and the Old One advances on
+> win / retries on loss (loop 5→1). `startEpoch` remains only as an owner override.
+> This ships **independently** of the Veil Protocol (decoupled — Veil is separate contracts
+> funded by a treasury RITUAL reserve, no Summoning redeploy needed for it).
+> **The deployed mainnet contract is still the old owner-driven engine** — CONTRACT_PARAMS
+> and the notes below describe the new source; they take effect on the pending engine-only
+> redeploy (new `SummoningEngine` + Safe `glyphs.setEngine`/`artifacts.setEngine`). Sepolia
+> rehearsal pending. See `~/.claude/plans/polymorphic-knitting-kitten.md`.
 
 1. **Glyphs are on-chain ERC-1155 NFTs** minted by the EldritchGlyphs contract via **Chainlink VRF**. Tier, rune, and lore are provably fair random assignments. The backend is an event indexer — it does NOT assign glyphs.
 
@@ -223,6 +234,8 @@ Buttons: bg gradient(135deg, #4c1d95, #7c3aed), uppercase, tracking-widest, seri
 12. **Gas costs are near zero**: At 0.03 gwei, a sacrifice costs ~$0.006. Don't show gas warnings unless price spikes above 5 gwei.
 
 13. **Sole-contributor Harbinger** (M-01): `_calculateTier` special-cases `participantCount == 1` to return Harbinger (tier 1). Without this, the avg-multiple thresholds are unreachable for a sole summoner.
+
+14. **Self-perpetuating lifecycle** (see callout above): epochs open on demand, not by owner call. `commitRitual` auto-opens the next epoch when `currentEpochId == 0` or `epochs[currentEpochId].resolved`, via internal `_openNextEpoch` → `_computeNextThreshold` (WIN `+WIN_INCREMENT`; LOSS `×3/4` floored at `THRESHOLD_FLOOR`; genesis `GENESIS_THRESHOLD`) and `_computeNextOldOne` (advance-on-win looping `OLD_ONE_COUNT → 1`, retry-on-loss). Resolution stays permissionless (self-hosted keeper / anyone calls `resolveEpoch`); the keeper no longer suggests thresholds. The frontend's idle state renders `BeginSummoning` (the first sacrifice opens the next epoch); `nextThreshold()` previews the next target. `startEpoch` is retained as an `onlyOwner` bootstrap/emergency override only.
 
 ## Testing Requirements
 

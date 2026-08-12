@@ -12,6 +12,7 @@ import EpochStatus from "@/components/epoch/EpochStatus";
 import CultRankBar from "@/components/rank/CultRankBar";
 import Leaderboard from "@/components/rank/Leaderboard";
 import SacrificePanel from "@/components/sacrifice/SacrificePanel";
+import BeginSummoning from "@/components/sacrifice/BeginSummoning";
 import ClaimArtifact from "@/components/claim/ClaimArtifact";
 import ClaimGlyphsPanel from "@/components/claim/ClaimGlyphsPanel";
 import PreLaunchModal from "@/components/layout/PreLaunchModal";
@@ -100,10 +101,15 @@ export default function Home() {
           <EpochStatus />
         </div>
 
-        {/* Sacrifice / Claim / Pending panel — depends on phase + on-chain resolved flag */}
-        {address && epoch && (
+        {/* Sacrifice / Begin / Claim panel — the game is self-perpetuating, so the idle
+            state (no epoch, or a resolved one) offers "Begin the Summoning": the next
+            sacrifice auto-opens the next epoch on-chain. */}
+        {address && (
           <div className="max-w-md mx-auto mt-6 sm:mt-8">
-            {epoch.phase === "Ritual" ? (
+            {!epoch ? (
+              // Pre-genesis: no summoning has ever opened.
+              <BeginSummoning resolvedEpoch={null} />
+            ) : epoch.phase === "Ritual" ? (
               <SacrificePanel epoch={epoch} />
             ) : epoch.phase === "Resolved" && !epoch.resolved ? (
               <div className="card text-center py-6 space-y-2">
@@ -113,17 +119,14 @@ export default function Home() {
                 </p>
               </div>
             ) : epoch.phase === "Resolved" ? (
+              // Resolved: claim this epoch's rewards, and anyone can open the next summoning.
               <>
                 <ClaimArtifact epoch={epoch} />
                 <ClaimGlyphsPanel epoch={epoch} />
+                <div className="mt-6 sm:mt-8">
+                  <BeginSummoning resolvedEpoch={epoch} />
+                </div>
               </>
-            ) : epoch.phase === "Gathering" ? (
-              <div className="card text-center py-6 space-y-2">
-                <div className="section-label">Sacrifice opens soon</div>
-                <p className="text-xs sm:text-sm text-gray-300 italic">
-                  The gathering phase is active. Mint your $RITUAL tokens now. When the ritual phase begins, you&apos;ll sacrifice them to receive on-chain glyphs.
-                </p>
-              </div>
             ) : null}
           </div>
         )}
