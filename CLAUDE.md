@@ -239,7 +239,7 @@ Buttons: bg gradient(135deg, #4c1d95, #7c3aed), uppercase, tracking-widest, seri
 
 ## Testing Requirements
 
-- Contracts: 232 tests across 5 suites, all passing with 10,000 fuzz runs (post-audit)
+- Contracts: 246 tests across 5 suites, all passing with 10,000 fuzz runs (post-audit; see AUDIT.md + AUDIT-PHASE0.md)
 - Contracts: 100% branch coverage on MintingCurve, SummoningEngine, and EldritchGlyphs
 - Contracts: Fuzz test on EldritchGlyphs tier distribution — 10,000 VRF seeds, ±2% of 50/28/15/6/1
 - Backend: Idempotency test — processing same GlyphMinted event twice must not create duplicate glyphs

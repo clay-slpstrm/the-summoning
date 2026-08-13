@@ -206,6 +206,32 @@ contract SummoningEngineTest is Test {
         engine.startEpoch(OLD_ONE_ID, 0);
     }
 
+    function test_StartEpoch_Reverts_OldOneOutOfRange() public {
+        // L-01 (Phase 0 audit): oldOneId feeds the on-chain rotation, so the owner
+        // override must not inject ids outside [1, OLD_ONE_COUNT].
+        uint256 outOfRange = engine.OLD_ONE_COUNT() + 1; // hoisted: inline view calls consume prank/expectRevert
+
+        vm.prank(owner);
+        vm.expectRevert(SummoningEngine.SummoningEngine__InvalidOldOne.selector);
+        engine.startEpoch(0, THRESHOLD);
+
+        vm.prank(owner);
+        vm.expectRevert(SummoningEngine.SummoningEngine__InvalidOldOne.selector);
+        engine.startEpoch(outOfRange, THRESHOLD);
+    }
+
+    function test_StartEpoch_AcceptsFullOldOneRange() public {
+        // Boundary ids 1 and OLD_ONE_COUNT are both valid.
+        uint256 maxId = engine.OLD_ONE_COUNT();
+
+        vm.prank(owner);
+        engine.startEpoch(1, THRESHOLD);
+        _resolve();
+        vm.prank(owner);
+        engine.startEpoch(maxId, THRESHOLD);
+        assertEq(engine.getEpoch(2).oldOneId, maxId);
+    }
+
     function test_StartEpoch_Reverts_PriorEpochUnresolved() public {
         vm.prank(owner);
         engine.startEpoch(OLD_ONE_ID, THRESHOLD);
@@ -803,6 +829,34 @@ contract SummoningEngineTest is Test {
         assertEq(artifacts.balanceOf(alice, 1002), 1);
     }
 
+    function test_ClaimReward_MultiParticipant_HarbingerTier() public {
+        // Multi-party Harbinger requires contribution >= 10× avg with participantCount > 1,
+        // which needs a wide field: with N small contributors at S and one whale at W,
+        // Harbinger needs W*(N-9) >= 10*N*S. Use N=11, S=1,000, W=60,000:
+        //   total = 71,000e18 (> THRESHOLD → success), avg = 71,000/12 ≈ 5,916.7,
+        //   10×avg ≈ 59,167 ≤ 60,000 → whale is Harbinger (tier 1).
+        _startAndWarpToRitual();
+
+        uint256 S = 1_000e18;
+        for (uint256 i = 0; i < 11; i++) {
+            address minnow = makeAddr(string.concat("minnow", vm.toString(i)));
+            deal(address(token), minnow, S, true);
+            vm.prank(minnow); token.approve(address(engine), type(uint256).max);
+            vm.prank(minnow); engine.commitRitual(S);
+        }
+        address whale = makeAddr("harbingerWhale");
+        deal(address(token), whale, 60_000e18, true);
+        vm.prank(whale); token.approve(address(engine), type(uint256).max);
+        vm.prank(whale); engine.commitRitual(60_000e18);
+
+        _resolve();
+        assertTrue(engine.getEpoch(1).successful);
+
+        vm.prank(whale);
+        engine.claimReward(1);
+        assertEq(artifacts.balanceOf(whale, 1001), 1); // Harbinger, tokenId 1*1000+1
+    }
+
     function test_ClaimReward_EmitsEvent() public {
         _startAndWarpToRitual();
         vm.prank(alice);
@@ -1160,6 +1214,31 @@ contract SummoningEngineTest is Test {
         SummoningEngine.Epoch memory e3 = engine.getEpoch(3);
         assertEq(e3.oldOneId, 2);                        // retry the advanced Old One
         assertEq(e3.threshold, ((genesis + engine.WIN_INCREMENT()) * 3) / 4); // 225k × 0.75
+    }
+
+    // ── Auto-open must ignore the gather window (H-01, Phase 0 audit) ──────────
+
+    function test_AutoOpen_WorksWithPositiveGatheringDuration() public {
+        // Regression (Phase 0 audit H-01): auto-opened epochs must start their ritual
+        // window at `now` regardless of GATHERING_DURATION. Before the fix,
+        // _openNextEpoch stamped ritualStart = now + GATHERING_DURATION, and
+        // commitRitual's own phase check then rejected the opening sacrifice —
+        // bricking the self-perpetuating loop on any deploy with gathering > 0.
+        vm.prank(owner);
+        SummoningEngine g = new SummoningEngine(
+            address(token), address(artifacts), address(mockGlyphs), owner, 1 hours, 24 hours
+        );
+        vm.prank(alice); token.approve(address(g), type(uint256).max);
+
+        vm.prank(alice);
+        g.commitRitual(MIN); // must auto-open and count, not revert InvalidPhase
+
+        assertEq(g.currentEpochId(), 1);
+        SummoningEngine.Epoch memory e = g.getEpoch(1);
+        assertEq(e.ritualStart, block.timestamp);                          // no gather offset
+        assertEq(e.ritualEnd, block.timestamp + g.RITUAL_DURATION());      // 24h window
+        assertEq(e.totalCommitted, MIN);
+        assertEq(g.getContribution(1, alice), MIN);
     }
 
     // ── Gather window (positive GATHERING_DURATION via owner override) ─────────

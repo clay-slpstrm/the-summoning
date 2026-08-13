@@ -134,6 +134,7 @@ contract SummoningEngine is Ownable, ReentrancyGuard, Pausable, AutomationCompat
     error SummoningEngine__NoActiveEpoch();
     error SummoningEngine__NoGlyphsEarned();
     error SummoningEngine__InvalidDuration();
+    error SummoningEngine__InvalidOldOne();
 
     // ── Constructor ──────────────────────────────────────────────────────────
 
@@ -189,6 +190,10 @@ contract SummoningEngine is Ownable, ReentrancyGuard, Pausable, AutomationCompat
     /// @param threshold Minimum $RITUAL (18 decimals) required for a successful summoning.
     function startEpoch(uint256 oldOneId, uint256 threshold) external onlyOwner {
         if (threshold == 0) revert SummoningEngine__ZeroThreshold();
+        // oldOneId feeds the on-chain rotation (_computeNextOldOne) — an out-of-range id
+        // would corrupt advance/retry semantics for every subsequent auto-opened epoch
+        // (Phase 0 audit, L-01).
+        if (oldOneId == 0 || oldOneId > OLD_ONE_COUNT) revert SummoningEngine__InvalidOldOne();
 
         // Ensure prior epoch is resolved before starting a new one (if any exists)
         if (currentEpochId > 0) {
@@ -395,8 +400,9 @@ contract SummoningEngine is Ownable, ReentrancyGuard, Pausable, AutomationCompat
     function getCurrentPhase() external view returns (EpochPhase) {
         if (currentEpochId == 0) return EpochPhase.Inactive;
 
+        // epochs[currentEpochId] always exists once currentEpochId > 0 — both writers
+        // (startEpoch, _openNextEpoch) stamp gatheringStart, so no zero-check is needed.
         Epoch storage epoch = epochs[currentEpochId];
-        if (epoch.gatheringStart == 0) return EpochPhase.Inactive;
         if (epoch.resolved) return EpochPhase.Resolved;
         if (block.timestamp < epoch.ritualStart) return EpochPhase.Gathering;
         if (block.timestamp < epoch.ritualEnd) return EpochPhase.Ritual;
@@ -430,8 +436,13 @@ contract SummoningEngine is Ownable, ReentrancyGuard, Pausable, AutomationCompat
 
     /// @dev Auto-open the next epoch (demand-driven, called from commitRitual). Derives the
     ///      threshold and Old One from the prior resolved epoch, or genesis defaults when no
-    ///      epoch has opened yet. The ritual window opens immediately: ritualStart =
-    ///      now + GATHERING_DURATION (== now when Gathering is collapsed to 0).
+    ///      epoch has opened yet.
+    ///      The ritual window ALWAYS opens immediately (ritualStart = now, ritualEnd =
+    ///      now + RITUAL_DURATION), deliberately ignoring GATHERING_DURATION: the opening
+    ///      sacrifice must land inside the window it creates, and commitRitual's own phase
+    ///      check would otherwise reject it on any deploy with a nonzero gathering — bricking
+    ///      the self-perpetuating loop (Phase 0 audit, H-01). A gather window only applies to
+    ///      owner-forced startEpoch.
     function _openNextEpoch() internal {
         uint256 priorId = currentEpochId;
 
@@ -454,8 +465,8 @@ contract SummoningEngine is Ownable, ReentrancyGuard, Pausable, AutomationCompat
             threshold: newThreshold,
             totalCommitted: 0,
             gatheringStart: block.timestamp,
-            ritualStart: block.timestamp + GATHERING_DURATION,
-            ritualEnd: block.timestamp + GATHERING_DURATION + RITUAL_DURATION,
+            ritualStart: block.timestamp,                     // no gather window on auto-open (H-01)
+            ritualEnd: block.timestamp + RITUAL_DURATION,
             successful: false,
             resolved: false,
             participantCount: 0

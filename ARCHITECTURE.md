@@ -1410,7 +1410,7 @@ Idle (no epoch active, or the current one is resolved) — minting always open o
 contracts/test/
 ├── RitualToken.t.sol        # Mint, burn, access control
 ├── MintingCurve.t.sol       # Price curve math, withdrawal, slippage
-├── SummoningEngine.t.sol    # Epoch lifecycle, auto-start, on-chain escalation, contributions, rewards (104 tests)
+├── SummoningEngine.t.sol    # Epoch lifecycle, auto-start, on-chain escalation, contributions, rewards (108 tests)
 ├── ElderArtifacts.t.sol     # Minting, token IDs, URI generation (36 tests)
 ├── EldritchGlyphs.t.sol     # VRF flow, tier distribution, royalties, transfers (85 tests)
 └── Integration.t.sol        # Full flow: mint → sacrifice → resolve → claim
