@@ -55,3 +55,9 @@ subgraph/build/
 
 # Local private planning docs (not for publication)
 private/
+
+# local rehearsal env copies (contain secrets)
+backend/.env.rehearsal
+frontend/.env.local.rehearsal
+backend/.env.pre-rehearsal.bak
+frontend/.env.local.pre-rehearsal.bak

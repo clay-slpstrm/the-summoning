@@ -16,7 +16,7 @@ import {
 } from "@/lib/contracts";
 
 export function useCommitRitual() {
-  const { writeContract, data: hash, isPending } = useWriteContract();
+  const { writeContract, data: hash, isPending, error } = useWriteContract();
   const { isLoading: isConfirming, isSuccess } = useWaitForTransactionReceipt({
     hash,
   });
@@ -36,6 +36,7 @@ export function useCommitRitual() {
     isPending, // tx submitted, waiting for wallet
     isConfirming, // tx in mempool, waiting for block
     isSuccess, // tx confirmed — glyph incoming via WS
+    error, // wallet rejection / RPC / simulation failure — render this, never swallow
   };
 }
 
@@ -76,7 +77,7 @@ export function useClaimGlyphs() {
 }
 
 export function useApproveRitual() {
-  const { writeContract, data: hash, isPending } = useWriteContract();
+  const { writeContract, data: hash, isPending, error } = useWriteContract();
   const { isLoading: isConfirming, isSuccess } = useWaitForTransactionReceipt({
     hash,
   });
@@ -90,7 +91,7 @@ export function useApproveRitual() {
     });
   };
 
-  return { approve, hash, isPending, isConfirming, isSuccess };
+  return { approve, hash, isPending, isConfirming, isSuccess, error };
 }
 
 export function useRitualAllowance(walletAddress?: `0x${string}`) {

@@ -46,12 +46,13 @@ export default function BeginSummoning({
   const { address } = useAccount();
   const [amount, setAmount] = useState("100");
 
-  const { commitRitual, isPending, isConfirming, isSuccess } = useCommitRitual();
+  const { commitRitual, isPending, isConfirming, isSuccess, error: commitError } = useCommitRitual();
   const {
     approve,
     isPending: isApproving,
     isConfirming: isApproveConfirming,
     isSuccess: approveSuccess,
+    error: approveError,
   } = useApproveRitual();
   const { data: allowance, refetch: refetchAllowance } = useRitualAllowance(address);
 
@@ -68,6 +69,13 @@ export default function BeginSummoning({
   useEffect(() => {
     if (approveSuccess) refetchAllowance();
   }, [approveSuccess, refetchAllowance]);
+
+  // Surface write failures — silently swallowing them left the button looking dead
+  // (caught during the Sepolia stage-2 rehearsal).
+  const writeError = commitError ?? approveError;
+  useEffect(() => {
+    if (writeError) console.error("[BeginSummoning] write failed:", writeError);
+  }, [writeError]);
 
   if (!address) return null;
 
@@ -164,6 +172,13 @@ export default function BeginSummoning({
       {isSuccess && (
         <div className="text-sm text-ritual-light font-serif tracking-wide mt-3 animate-fade-in">
           The portal opens. The ritual has begun.
+        </div>
+      )}
+
+      {writeError && !isBusy && (
+        <div className="text-[13px] text-red-400 mt-3 break-words">
+          The veil resists:{" "}
+          {(writeError as { shortMessage?: string }).shortMessage ?? writeError.message?.slice(0, 160)}
         </div>
       )}
     </div>
