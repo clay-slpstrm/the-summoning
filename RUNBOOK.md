@@ -70,6 +70,16 @@ ready — the 24h ritual clock starts the instant the first sacrifice lands.
 - [ ] **Backend + frontend up:** `curl https://api.thesummoning.xyz/health` → `ok`;
   https://thesummoning.xyz loads and shows current chain state. (`/api/health` may say
   `degraded` on a quiet chain — that heartbeat only ticks on real events; not a blocker.)
+- [ ] **Database quota (Neon):** the always-on backend keeps compute awake 24/7
+  (~182 CU-hrs/month at the 0.25 CU floor) — the free tier's 100 CU-hrs dies mid-month
+  **silently** (learned 2026-08: DB was down ~9 days unnoticed pre-launch; whole API
+  502s and every DB-touching request crash-loops the service). Stay on a paid plan
+  (Launch, ~$19/mo at current shape) and glance at the console usage meter monthly.
+  Cost-reduction option (post-launch project): Neon pooled connection string +
+  slower periodic DB jobs → compute can scale to zero → ~$2-4/mo.
+- [ ] **External uptime monitor on `/health` is MANDATORY, not optional** — it is the
+  only alarm that still works when the DB or the whole service is down (all other
+  alerts route through the backend itself). 5-min interval, alert-on-non-200.
 
 ## Resolution (automatic; manual fallback)
 
