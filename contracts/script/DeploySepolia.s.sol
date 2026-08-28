@@ -30,7 +30,8 @@ import "../src/EldritchGlyphs.sol";
 ///   MULTISIG_ADDRESS           — Safe address to use as owner. If unset, deployer EOA is used.
 ///   VRF_CALLBACK_GAS_LIMIT     — default 2_500_000 (sized for 50-glyph batched fulfill)
 ///   METADATA_BASE_URI          — default https://api.thesummoning.xyz/metadata/glyph/
-///   GATHERING_DURATION_SECONDS — default 300 (5 min) for fast Sepolia rehearsal
+///   GATHERING_DURATION_SECONDS — default 0 (Gathering collapsed — self-perpetuating config;
+///                                the first sacrifice opens the ritual directly)
 ///   RITUAL_DURATION_SECONDS    — default 300 (5 min) for fast Sepolia rehearsal
 ///
 /// Usage:
@@ -84,7 +85,9 @@ contract DeploySepolia is Script {
         );
         d.glyphs = _deployGlyphs(vrf, owner);
 
-        uint256 gathering = vm.envOr("GATHERING_DURATION_SECONDS", uint256(300));
+        // Self-perpetuating config: Gathering collapsed (0) by default. The first sacrifice
+        // auto-opens the epoch directly into the Ritual window.
+        uint256 gathering = vm.envOr("GATHERING_DURATION_SECONDS", uint256(0));
         uint256 ritual = vm.envOr("RITUAL_DURATION_SECONDS", uint256(300));
 
         d.engine = new SummoningEngine(

@@ -28,7 +28,7 @@ NEXT_PUBLIC_CHAIN_ID=1 \
 NEXT_PUBLIC_RPC_URL=$RPC_URL_MAINNET \
 NEXT_PUBLIC_RITUAL_TOKEN_ADDRESS=0x8daA5B21136de9B5ac43fd89fDc98cDe934E7863 \
 NEXT_PUBLIC_MINTING_CURVE_ADDRESS=0x8c7c1C76f32277EDc12B28440224fEF0f6985462 \
-NEXT_PUBLIC_SUMMONING_ENGINE_ADDRESS=0x5D474E68c08B2aF16dFEd50377B98573e17a5be5 \
+NEXT_PUBLIC_SUMMONING_ENGINE_ADDRESS=0x5029DDfcb2f6BA72f7C618FFd8B1237c246298d0 \
 NEXT_PUBLIC_ELDER_ARTIFACTS_ADDRESS=0x832436cdf21d6732fAfD22938ee2b7617D74af5A \
 NEXT_PUBLIC_ELDRITCH_GLYPHS_ADDRESS=0xe820607743E95a694Aa50a9BFFf628C3E202D156 \
 NEXT_PUBLIC_API_URL=https://api.thesummoning.xyz \
@@ -46,7 +46,8 @@ Optional launch-phase vars (add to the same block when set):
 
 ```bash
 cd out
-grep -rl "0x5D474E68c08B2aF16dFEd50377B98573e17a5be5" . | wc -l   # ≥1 (mainnet engine present)
+grep -rl "0x5029DDfcb2f6BA72f7C618FFd8B1237c246298d0" . | wc -l   # ≥1 (NEW mainnet engine present)
+grep -rl "0x5D474E68c08B2aF16dFEd50377B98573e17a5be5" . | wc -l   # MUST be 0 (retired old engine)
 grep -rl "0x48d37A403e382ac14B090578a4243F85F9ff7183" . | wc -l   # MUST be 0 (Sepolia engine)
 grep -rl "localhost:3002" . | wc -l                               # MUST be 0
 # grep -rl "sepolia" hits ~5 files = wallet-library chain tables — EXPECTED, ignore.

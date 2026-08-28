@@ -62,10 +62,16 @@ export const CONTRACT_PARAMS = {
   BASE_PRICE_ETH: 0.0001,
   SCALE_FACTOR: 100_000_000,
   PROTOCOL_FEE_BPS: 1200,
-  GATHERING_DURATION: 48 * 3600,
+  GATHERING_DURATION: 0,     // collapsed — self-perpetuating: first sacrifice opens the ritual
   RITUAL_DURATION: 24 * 3600,
   MIN_SACRIFICE: 1,
   GLYPH_UNIT: 100,           // 100 RITUAL per glyph earned (qualification threshold + divisor)
   MAX_GLYPHS_PER_CLAIM: 20,  // sized for Chainlink V2.5 2.5M callback gas ceiling
   SACRIFICE_COOLDOWN: 30,
+  // Self-perpetuating on-chain escalation (SummoningEngine): genesis 75k, +150k per win
+  // (linear ramp), ×0.75 per loss floored at 25k. Old One advances 1→5 on win (loops), retries on loss.
+  GENESIS_THRESHOLD: 75_000,
+  WIN_INCREMENT: 150_000,
+  THRESHOLD_FLOOR: 25_000,
+  OLD_ONE_COUNT: 5,
 } as const;

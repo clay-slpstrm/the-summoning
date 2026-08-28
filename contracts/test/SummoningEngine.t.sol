@@ -69,13 +69,21 @@ contract SummoningEngineTest is Test {
     uint256 constant MIN        = 1e18;
 
     function setUp() public {
+        // Start at a realistic block time. Foundry defaults to timestamp 1, which is below
+        // SACRIFICE_COOLDOWN (30s) and would spuriously trip the cooldown on a wallet's very
+        // first sacrifice (lastSacrificeTime 0 → 1 < 0 + 30). Mainnet timestamps are ~1.7e9,
+        // so this only matters in tests now that the Gathering warp no longer advances the clock.
+        vm.warp(1_720_000_000); // ~2024-07-03
+
         vm.startPrank(owner);
         token      = new RitualToken(owner);
         artifacts  = new ElderArtifacts("https://example.com/{id}.json", owner);
         mockGlyphs = new MockGlyphs();
-        // Audited mainnet durations (48h gathering + 24h ritual). The constructor accepts
-        // them as immutables; Sepolia rehearsals use shorter values.
-        engine     = new SummoningEngine(address(token), address(artifacts), address(mockGlyphs), owner, 48 hours, 24 hours);
+        // Self-perpetuating mainnet config: Gathering collapsed (0) + 24h ritual. The first
+        // commitRitual auto-opens the epoch directly into the Ritual window. Durations are
+        // constructor immutables; a positive gathering re-introduces a pre-ritual window
+        // (covered by the dedicated gather-window tests below).
+        engine     = new SummoningEngine(address(token), address(artifacts), address(mockGlyphs), owner, 0, 24 hours);
         token.setMinter(address(engine));
         artifacts.setEngine(address(engine));
         vm.stopPrank();
@@ -136,10 +144,13 @@ contract SummoningEngineTest is Test {
         new SummoningEngine(address(token), address(artifacts), address(0), owner, 48 hours, 24 hours);
     }
 
-    function test_Constructor_RevertsOnZeroGatheringDuration() public {
+    function test_Constructor_AllowsZeroGatheringDuration() public {
+        // Gathering collapsed is the self-perpetuating production config — 0 is valid.
         vm.prank(owner);
-        vm.expectRevert(SummoningEngine.SummoningEngine__InvalidDuration.selector);
-        new SummoningEngine(address(token), address(artifacts), address(mockGlyphs), owner, 0, 24 hours);
+        SummoningEngine e = new SummoningEngine(
+            address(token), address(artifacts), address(mockGlyphs), owner, 0, 24 hours
+        );
+        assertEq(e.GATHERING_DURATION(), 0);
     }
 
     function test_Constructor_RevertsOnZeroRitualDuration() public {
@@ -195,6 +206,32 @@ contract SummoningEngineTest is Test {
         engine.startEpoch(OLD_ONE_ID, 0);
     }
 
+    function test_StartEpoch_Reverts_OldOneOutOfRange() public {
+        // L-01 (Phase 0 audit): oldOneId feeds the on-chain rotation, so the owner
+        // override must not inject ids outside [1, OLD_ONE_COUNT].
+        uint256 outOfRange = engine.OLD_ONE_COUNT() + 1; // hoisted: inline view calls consume prank/expectRevert
+
+        vm.prank(owner);
+        vm.expectRevert(SummoningEngine.SummoningEngine__InvalidOldOne.selector);
+        engine.startEpoch(0, THRESHOLD);
+
+        vm.prank(owner);
+        vm.expectRevert(SummoningEngine.SummoningEngine__InvalidOldOne.selector);
+        engine.startEpoch(outOfRange, THRESHOLD);
+    }
+
+    function test_StartEpoch_AcceptsFullOldOneRange() public {
+        // Boundary ids 1 and OLD_ONE_COUNT are both valid.
+        uint256 maxId = engine.OLD_ONE_COUNT();
+
+        vm.prank(owner);
+        engine.startEpoch(1, THRESHOLD);
+        _resolve();
+        vm.prank(owner);
+        engine.startEpoch(maxId, THRESHOLD);
+        assertEq(engine.getEpoch(2).oldOneId, maxId);
+    }
+
     function test_StartEpoch_Reverts_PriorEpochUnresolved() public {
         vm.prank(owner);
         engine.startEpoch(OLD_ONE_ID, THRESHOLD);
@@ -220,10 +257,11 @@ contract SummoningEngineTest is Test {
         assertEq(uint8(engine.getCurrentPhase()), uint8(SummoningEngine.EpochPhase.Inactive));
     }
 
-    function test_Phase_Gathering_AfterStart() public {
+    function test_Phase_Ritual_ImmediatelyAfterStart_WhenGatheringCollapsed() public {
+        // Gathering collapsed (0) → startEpoch lands directly in the Ritual window.
         vm.prank(owner);
         engine.startEpoch(OLD_ONE_ID, THRESHOLD);
-        assertEq(uint8(engine.getCurrentPhase()), uint8(SummoningEngine.EpochPhase.Gathering));
+        assertEq(uint8(engine.getCurrentPhase()), uint8(SummoningEngine.EpochPhase.Ritual));
     }
 
     function test_Phase_Ritual_AfterGatheringEnds() public {
@@ -298,17 +336,32 @@ contract SummoningEngineTest is Test {
         assertEq(engine.getContributors(1).length, 3);
     }
 
-    function test_CommitRitual_Reverts_NoActiveEpoch() public {
+    function test_CommitRitual_AutoStartsGenesisEpoch() public {
+        // No epoch exists → the first sacrifice auto-opens epoch 1 with the genesis threshold
+        // and the first Old One, and is counted as the opening contribution.
+        assertEq(engine.currentEpochId(), 0);
+
         vm.prank(alice);
-        vm.expectRevert(SummoningEngine.SummoningEngine__NoActiveEpoch.selector);
         engine.commitRitual(MIN);
+
+        assertEq(engine.currentEpochId(), 1);
+        SummoningEngine.Epoch memory e = engine.getEpoch(1);
+        assertEq(e.oldOneId, 1);
+        assertEq(e.threshold, engine.GENESIS_THRESHOLD());
+        assertEq(e.ritualStart, block.timestamp);            // Gathering collapsed
+        assertEq(e.ritualEnd, block.timestamp + engine.RITUAL_DURATION());
+        assertEq(e.totalCommitted, MIN);
+        assertEq(e.participantCount, 1);
+        assertEq(engine.getContribution(1, alice), MIN);
+        assertEq(uint8(engine.getCurrentPhase()), uint8(SummoningEngine.EpochPhase.Ritual));
     }
 
-    function test_CommitRitual_Reverts_DuringGatheringPhase() public {
-        vm.prank(owner);
-        engine.startEpoch(OLD_ONE_ID, THRESHOLD);
+    function test_CommitRitual_AutoStart_EmitsEpochStartedThenSacrifice() public {
+        vm.expectEmit(true, false, false, true);
+        emit SummoningEngine.EpochStarted(1, 1, engine.GENESIS_THRESHOLD(), block.timestamp);
+        vm.expectEmit(true, true, false, true);
+        emit SummoningEngine.RitualSacrifice(1, alice, MIN, MIN);
         vm.prank(alice);
-        vm.expectRevert(SummoningEngine.SummoningEngine__InvalidPhase.selector);
         engine.commitRitual(MIN);
     }
 
@@ -776,6 +829,34 @@ contract SummoningEngineTest is Test {
         assertEq(artifacts.balanceOf(alice, 1002), 1);
     }
 
+    function test_ClaimReward_MultiParticipant_HarbingerTier() public {
+        // Multi-party Harbinger requires contribution >= 10× avg with participantCount > 1,
+        // which needs a wide field: with N small contributors at S and one whale at W,
+        // Harbinger needs W*(N-9) >= 10*N*S. Use N=11, S=1,000, W=60,000:
+        //   total = 71,000e18 (> THRESHOLD → success), avg = 71,000/12 ≈ 5,916.7,
+        //   10×avg ≈ 59,167 ≤ 60,000 → whale is Harbinger (tier 1).
+        _startAndWarpToRitual();
+
+        uint256 S = 1_000e18;
+        for (uint256 i = 0; i < 11; i++) {
+            address minnow = makeAddr(string.concat("minnow", vm.toString(i)));
+            deal(address(token), minnow, S, true);
+            vm.prank(minnow); token.approve(address(engine), type(uint256).max);
+            vm.prank(minnow); engine.commitRitual(S);
+        }
+        address whale = makeAddr("harbingerWhale");
+        deal(address(token), whale, 60_000e18, true);
+        vm.prank(whale); token.approve(address(engine), type(uint256).max);
+        vm.prank(whale); engine.commitRitual(60_000e18);
+
+        _resolve();
+        assertTrue(engine.getEpoch(1).successful);
+
+        vm.prank(whale);
+        engine.claimReward(1);
+        assertEq(artifacts.balanceOf(whale, 1001), 1); // Harbinger, tokenId 1*1000+1
+    }
+
     function test_ClaimReward_EmitsEvent() public {
         _startAndWarpToRitual();
         vm.prank(alice);
@@ -942,27 +1023,41 @@ contract SummoningEngineTest is Test {
     // ── nextThreshold ────────────────────────────────────────────────────────
 
     function test_NextThreshold_Escalates_OnSuccess() public {
+        // WIN: prior threshold + WIN_INCREMENT (fixed additive ramp).
         _startAndWarpToRitual();
         vm.prank(alice);
         engine.commitRitual(THRESHOLD);
         _resolve();
 
-        uint256 expected = (THRESHOLD * engine.ESCALATION_BPS()) / 10_000;
-        assertEq(engine.nextThreshold(), expected);
+        assertEq(engine.nextThreshold(), THRESHOLD + engine.WIN_INCREMENT());
     }
 
-    function test_NextThreshold_Reduces_OnFailure() public {
+    function test_NextThreshold_Reduces_OnFailure_FlooredAtFloor() public {
+        // LOSS: prior ×0.75, floored at THRESHOLD_FLOOR. THRESHOLD(10k)×0.75 = 7.5k < 25k floor.
         _startAndWarpToRitual();
         vm.prank(alice);
         engine.commitRitual(MIN);
         _resolve();
 
-        uint256 expected = (THRESHOLD * (10_000 - engine.FAILURE_REDUCTION_BPS())) / 10_000;
-        assertEq(engine.nextThreshold(), expected);
+        assertEq(engine.nextThreshold(), engine.THRESHOLD_FLOOR());
     }
 
-    function test_NextThreshold_ReturnsZero_BeforeFirstEpoch() public view {
-        assertEq(engine.nextThreshold(), 0);
+    function test_NextThreshold_Reduces_OnFailure_AboveFloor() public {
+        // A loss from a high threshold decays ×0.75 without hitting the floor.
+        // Owner-seed a 200k epoch, fail it → next = 150k (> 25k floor).
+        uint256 high = 200_000e18;
+        vm.prank(owner);
+        engine.startEpoch(OLD_ONE_ID, high);
+        vm.prank(alice);
+        engine.commitRitual(MIN);
+        _resolve();
+
+        assertEq(engine.nextThreshold(), (high * 3) / 4);
+    }
+
+    function test_NextThreshold_Genesis_BeforeFirstEpoch() public view {
+        // Idle before epoch 1 → the next summoning opens at the genesis threshold.
+        assertEq(engine.nextThreshold(), engine.GENESIS_THRESHOLD());
     }
 
     function test_NextThreshold_ReturnsZero_WhileEpochActive() public {
@@ -974,27 +1069,25 @@ contract SummoningEngineTest is Test {
     // ── Constants ────────────────────────────────────────────────────────────
 
     function test_Constants() public view {
-        assertEq(engine.GATHERING_DURATION(), 48 hours);
+        assertEq(engine.GATHERING_DURATION(), 0); // collapsed in the self-perpetuating config
         assertEq(engine.RITUAL_DURATION(), 24 hours);
         assertEq(engine.MIN_SACRIFICE(), 1e18);
         assertEq(engine.SACRIFICE_COOLDOWN(), 30);
-        assertEq(engine.FAILURE_REDUCTION_BPS(), 2000);
-        assertEq(engine.ESCALATION_BPS(), 13000);
+        assertEq(engine.GENESIS_THRESHOLD(), 75_000e18);
+        assertEq(engine.WIN_INCREMENT(), 150_000e18);
+        assertEq(engine.THRESHOLD_FLOOR(), 25_000e18);
+        assertEq(engine.OLD_ONE_COUNT(), 5);
     }
 
     // ── Full Lifecycle ───────────────────────────────────────────────────────
 
     function test_FullLifecycle_SuccessfulEpoch() public {
-        // 1. Start
+        // 1. Start (owner override to set a controlled 10k threshold; Gathering collapsed → Ritual)
         vm.prank(owner);
         engine.startEpoch(OLD_ONE_ID, THRESHOLD);
-        assertEq(uint8(engine.getCurrentPhase()), uint8(SummoningEngine.EpochPhase.Gathering));
-
-        // 2. Warp to ritual
-        vm.warp(block.timestamp + engine.GATHERING_DURATION());
         assertEq(uint8(engine.getCurrentPhase()), uint8(SummoningEngine.EpochPhase.Ritual));
 
-        // 3. Sacrifice (two separate commits)
+        // 2. Sacrifice (two separate commits)
         vm.prank(alice);
         engine.commitRitual(THRESHOLD / 2);
         vm.warp(block.timestamp + engine.SACRIFICE_COOLDOWN() + 1);
@@ -1002,31 +1095,25 @@ contract SummoningEngineTest is Test {
         engine.commitRitual(THRESHOLD / 2);
         assertEq(engine.getEpoch(1).totalCommitted, THRESHOLD);
 
-        // 4. Resolve
+        // 3. Resolve
         _resolve();
         assertTrue(engine.getEpoch(1).successful);
 
-        // 5. Claim
+        // 4. Claim
         vm.prank(alice);
         engine.claimReward(1);
         // M-01: alice is the sole contributor → Harbinger (tier 1, tokenId 1001).
         assertEq(artifacts.balanceOf(alice, 1001), 1);
-        // No artifact at the other tiers.
         assertEq(artifacts.balanceOf(alice, 1002), 0);
         assertEq(artifacts.balanceOf(alice, 1003), 0);
 
-        // 6. Start next epoch
-        uint256 newThreshold = engine.nextThreshold();
-        assertEq(newThreshold, (THRESHOLD * 13_000) / 10_000);
-        vm.prank(owner);
-        engine.startEpoch(OLD_ONE_ID + 1, newThreshold);
-        assertEq(engine.currentEpochId(), 2);
+        // 5. Next threshold escalates by the fixed WIN_INCREMENT.
+        assertEq(engine.nextThreshold(), THRESHOLD + engine.WIN_INCREMENT());
     }
 
     function test_FullLifecycle_FailedEpoch() public {
         vm.prank(owner);
         engine.startEpoch(OLD_ONE_ID, THRESHOLD);
-        vm.warp(block.timestamp + engine.GATHERING_DURATION());
         vm.prank(alice);
         engine.commitRitual(MIN); // well below threshold
         _resolve();
@@ -1037,12 +1124,145 @@ contract SummoningEngineTest is Test {
         engine.claimReward(1);
         assertEq(artifacts.balanceOf(alice, 1000), 1); // Shattered Ritual
 
-        // Reduced threshold for next epoch
-        uint256 reduced = engine.nextThreshold();
-        assertEq(reduced, (THRESHOLD * 8_000) / 10_000);
-        vm.prank(owner);
-        engine.startEpoch(OLD_ONE_ID, reduced);
+        // Decayed threshold for the next epoch (10k×0.75 = 7.5k → floored at 25k).
+        assertEq(engine.nextThreshold(), engine.THRESHOLD_FLOOR());
+    }
+
+    // ── Self-perpetuating loop (demand-driven auto-open + on-chain escalation) ──
+
+    function test_SelfPerpetuating_SecondEpochAutoOpensAfterWin() public {
+        // Epoch 1 auto-opens at genesis and is won; the NEXT sacrifice auto-opens epoch 2 with
+        // the escalated threshold and the advanced Old One — no owner call in between.
+        uint256 genesis = engine.GENESIS_THRESHOLD();
+        deal(address(token), alice, genesis + 1e18, true);
+
+        vm.prank(alice); engine.commitRitual(genesis); // opens + wins epoch 1 (oldOne 1)
+        _resolve();
+        assertTrue(engine.getEpoch(1).successful);
+
+        vm.prank(bob); engine.commitRitual(MIN);        // auto-opens epoch 2
         assertEq(engine.currentEpochId(), 2);
+        SummoningEngine.Epoch memory e2 = engine.getEpoch(2);
+        assertEq(e2.threshold, genesis + engine.WIN_INCREMENT()); // 75k + 150k = 225k
+        assertEq(e2.oldOneId, 2);                                 // advanced 1 → 2
+        assertEq(e2.totalCommitted, MIN);                        // bob's opening sacrifice counts
+        assertEq(engine.getContribution(2, bob), MIN);
+    }
+
+    function test_SelfPerpetuating_NextEpochAutoOpensAfterLoss_SameOldOne() public {
+        // Epoch 1 auto-opens at genesis and fails; the next sacrifice auto-opens epoch 2 with a
+        // decayed threshold and the SAME Old One (the cult regroups).
+        uint256 genesis = engine.GENESIS_THRESHOLD();
+
+        vm.prank(alice); engine.commitRitual(MIN); // opens epoch 1, below threshold
+        _resolve();
+        assertFalse(engine.getEpoch(1).successful);
+
+        vm.prank(bob); engine.commitRitual(MIN);   // auto-opens epoch 2
+        SummoningEngine.Epoch memory e2 = engine.getEpoch(2);
+        assertEq(e2.threshold, (genesis * 3) / 4); // 75k × 0.75 = 56.25k (above floor)
+        assertEq(e2.oldOneId, 1);                  // retry same Old One
+    }
+
+    function test_SelfPerpetuating_ThresholdFloorHolds() public {
+        // Seed a low threshold via the owner override, then drive repeated losses through the
+        // auto-open path and assert the threshold decays to the floor and stays there.
+        vm.prank(owner);
+        engine.startEpoch(OLD_ONE_ID, 30_000e18);
+        vm.prank(alice); engine.commitRitual(MIN);
+        _resolve(); // epoch 1 fails; next = max(22.5k, 25k) = 25k floor
+
+        vm.prank(bob); engine.commitRitual(MIN); // auto-opens epoch 2 at the floor
+        assertEq(engine.getEpoch(2).threshold, engine.THRESHOLD_FLOOR());
+        _resolve(); // epoch 2 fails; next = max(18.75k, 25k) = 25k floor
+
+        vm.prank(carol); engine.commitRitual(MIN); // auto-opens epoch 3, still floored
+        assertEq(engine.getEpoch(3).threshold, engine.THRESHOLD_FLOOR());
+    }
+
+    function test_SelfPerpetuating_OldOneAdvancesAndLoops() public {
+        // Win six consecutive auto-opened epochs; the Old One advances 1→5 then loops back to 1.
+        address whale = makeAddr("whale");
+        deal(address(token), whale, 5_000_000e18, true);
+        vm.prank(whale); token.approve(address(engine), type(uint256).max);
+
+        uint8[6] memory expectedOldOne = [1, 2, 3, 4, 5, 1];
+        for (uint256 i = 0; i < 6; i++) {
+            uint256 t = engine.nextThreshold();       // threshold the next auto-epoch will use
+            vm.prank(whale); engine.commitRitual(t);  // opens epoch i+1 and meets its threshold
+            assertEq(engine.getEpoch(engine.currentEpochId()).oldOneId, expectedOldOne[i]);
+            _resolve();
+            assertTrue(engine.getEpoch(engine.currentEpochId()).successful);
+        }
+    }
+
+    function test_SelfPerpetuating_WinThenLoss_RetriesAdvancedOldOne() public {
+        // Win epoch 1 (Old One 1 → advances to 2 for epoch 2), fail epoch 2, then epoch 3 retries
+        // Old One 2 with a decayed threshold — win-advance then loss-retry compose correctly.
+        uint256 genesis = engine.GENESIS_THRESHOLD();
+        deal(address(token), alice, genesis + 1e18, true);
+
+        vm.prank(alice); engine.commitRitual(genesis); // epoch 1 (oldOne 1) → win
+        _resolve();
+
+        vm.prank(bob); engine.commitRitual(MIN);        // epoch 2 (oldOne 2, 225k) → will fail
+        assertEq(engine.getEpoch(2).oldOneId, 2);
+        _resolve();
+        assertFalse(engine.getEpoch(2).successful);
+
+        vm.prank(carol); engine.commitRitual(MIN);      // epoch 3 auto-opens
+        SummoningEngine.Epoch memory e3 = engine.getEpoch(3);
+        assertEq(e3.oldOneId, 2);                        // retry the advanced Old One
+        assertEq(e3.threshold, ((genesis + engine.WIN_INCREMENT()) * 3) / 4); // 225k × 0.75
+    }
+
+    // ── Auto-open must ignore the gather window (H-01, Phase 0 audit) ──────────
+
+    function test_AutoOpen_WorksWithPositiveGatheringDuration() public {
+        // Regression (Phase 0 audit H-01): auto-opened epochs must start their ritual
+        // window at `now` regardless of GATHERING_DURATION. Before the fix,
+        // _openNextEpoch stamped ritualStart = now + GATHERING_DURATION, and
+        // commitRitual's own phase check then rejected the opening sacrifice —
+        // bricking the self-perpetuating loop on any deploy with gathering > 0.
+        vm.prank(owner);
+        SummoningEngine g = new SummoningEngine(
+            address(token), address(artifacts), address(mockGlyphs), owner, 1 hours, 24 hours
+        );
+        vm.prank(alice); token.approve(address(g), type(uint256).max);
+
+        vm.prank(alice);
+        g.commitRitual(MIN); // must auto-open and count, not revert InvalidPhase
+
+        assertEq(g.currentEpochId(), 1);
+        SummoningEngine.Epoch memory e = g.getEpoch(1);
+        assertEq(e.ritualStart, block.timestamp);                          // no gather offset
+        assertEq(e.ritualEnd, block.timestamp + g.RITUAL_DURATION());      // 24h window
+        assertEq(e.totalCommitted, MIN);
+        assertEq(g.getContribution(1, alice), MIN);
+    }
+
+    // ── Gather window (positive GATHERING_DURATION via owner override) ─────────
+
+    function test_GatherWindow_GatheringPhaseThenRitual() public {
+        // A deploy with a positive gathering duration still supports a pre-ritual gather window:
+        // Gathering phase blocks commits until it elapses, then the Ritual window opens.
+        vm.prank(owner);
+        SummoningEngine g = new SummoningEngine(
+            address(token), address(artifacts), address(mockGlyphs), owner, 1 hours, 24 hours
+        );
+        vm.prank(owner);
+        g.startEpoch(OLD_ONE_ID, THRESHOLD);
+
+        assertEq(uint8(g.getCurrentPhase()), uint8(SummoningEngine.EpochPhase.Gathering));
+        vm.prank(alice); token.approve(address(g), type(uint256).max);
+        vm.prank(alice);
+        vm.expectRevert(SummoningEngine.SummoningEngine__InvalidPhase.selector);
+        g.commitRitual(MIN);
+
+        vm.warp(block.timestamp + 1 hours);
+        assertEq(uint8(g.getCurrentPhase()), uint8(SummoningEngine.EpochPhase.Ritual));
+        vm.prank(alice); g.commitRitual(MIN);
+        assertEq(g.getContribution(1, alice), MIN);
     }
 
     // ── Fuzz ─────────────────────────────────────────────────────────────────
@@ -1060,6 +1280,32 @@ contract SummoningEngineTest is Test {
         vm.prank(owner);
         engine.startEpoch(OLD_ONE_ID, threshold);
         assertEq(engine.getEpoch(1).threshold, threshold);
+    }
+
+    function testFuzz_NextThreshold_Loss_DecaysAndFloors(uint256 t) public {
+        // Any losing threshold decays ×0.75, never below THRESHOLD_FLOOR.
+        t = bound(t, MIN + 1, type(uint128).max); // > MIN so a single MIN sacrifice fails
+        vm.prank(owner); engine.startEpoch(OLD_ONE_ID, t);
+        vm.prank(alice); engine.commitRitual(MIN);
+        _resolve();
+
+        uint256 expected = (t * 3) / 4;
+        uint256 floor = engine.THRESHOLD_FLOOR();
+        if (expected < floor) expected = floor;
+        assertEq(engine.nextThreshold(), expected);
+    }
+
+    function testFuzz_NextThreshold_Win_AddsIncrement(uint256 t) public {
+        // Any winning threshold escalates by exactly WIN_INCREMENT (linear ramp).
+        t = bound(t, MIN, 100_000_000e18);
+        address fuzzWhale = makeAddr("fuzzWhale");
+        deal(address(token), fuzzWhale, t, true);
+        vm.prank(fuzzWhale); token.approve(address(engine), type(uint256).max);
+
+        vm.prank(owner); engine.startEpoch(OLD_ONE_ID, t);
+        vm.prank(fuzzWhale); engine.commitRitual(t); // meets threshold → win
+        _resolve();
+        assertEq(engine.nextThreshold(), t + engine.WIN_INCREMENT());
     }
 
     function testFuzz_TokenId_EncodesCorrectly(uint256 epochId, uint256 tierId) public pure {

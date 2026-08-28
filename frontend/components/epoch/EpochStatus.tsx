@@ -61,7 +61,10 @@ export default function EpochStatus() {
   if (!epoch) {
     return (
       <div className="card text-center py-8">
-        <div className="text-gray-600 text-sm italic">No active epoch</div>
+        <div className="text-gray-400 text-sm italic">The veil is quiet</div>
+        <div className="text-gray-600 text-xs mt-1.5 font-mono">
+          The first sacrifice opens the summoning
+        </div>
       </div>
     );
   }
@@ -133,7 +136,7 @@ export default function EpochStatus() {
 
         {isPendingResolution && (
           <div className="text-[12px] sm:text-[13px] text-gray-300 italic max-w-[180px] text-right">
-            Awaiting Chainlink Automation to finalize&hellip;
+            The veil settles&hellip; resolution imminent
           </div>
         )}
       </div>

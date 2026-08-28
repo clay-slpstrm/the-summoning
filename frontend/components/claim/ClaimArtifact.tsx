@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useAccount, useReadContract } from "wagmi";
-import { sepolia } from "wagmi/chains";
+import { activeChain } from "@/lib/chains";
 import { SUMMONING_ENGINE_ADDRESS, SUMMONING_ENGINE_ABI } from "@/lib/contracts";
 import { useClaimReward } from "@/hooks/useSummoning";
 import type { EpochData } from "@/hooks/useEpochProgress";
@@ -40,7 +40,7 @@ export default function ClaimArtifact({ epoch }: { epoch: EpochData }) {
     abi: SUMMONING_ENGINE_ABI,
     functionName: "getContribution",
     args: address ? [BigInt(epoch.epochId), address] : undefined,
-    chainId: sepolia.id,
+    chainId: activeChain.id,
     query: { enabled: !!address && epoch.resolved },
   });
 
@@ -51,7 +51,7 @@ export default function ClaimArtifact({ epoch }: { epoch: EpochData }) {
     abi: SUMMONING_ENGINE_ABI,
     functionName: "rewardClaimed",
     args: address ? [BigInt(epoch.epochId), address] : undefined,
-    chainId: sepolia.id,
+    chainId: activeChain.id,
     query: { enabled: !!address && epoch.resolved },
   });
 

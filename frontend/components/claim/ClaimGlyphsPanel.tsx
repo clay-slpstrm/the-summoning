@@ -20,7 +20,7 @@
 
 import { useEffect } from "react";
 import { useAccount, useReadContract } from "wagmi";
-import { sepolia } from "wagmi/chains";
+import { activeChain } from "@/lib/chains";
 import { formatEther } from "viem";
 import { SUMMONING_ENGINE_ADDRESS, SUMMONING_ENGINE_ABI } from "@/lib/contracts";
 import { useClaimGlyphs } from "@/hooks/useSummoning";
@@ -38,7 +38,7 @@ export default function ClaimGlyphsPanel({ epoch }: { epoch: EpochData }) {
     abi: SUMMONING_ENGINE_ABI,
     functionName: "getContribution",
     args: address ? [BigInt(epoch.epochId), address] : undefined,
-    chainId: sepolia.id,
+    chainId: activeChain.id,
     query: { enabled: !!address && epoch.resolved },
   });
 
@@ -47,7 +47,7 @@ export default function ClaimGlyphsPanel({ epoch }: { epoch: EpochData }) {
     abi: SUMMONING_ENGINE_ABI,
     functionName: "glyphsClaimedCount",
     args: address ? [BigInt(epoch.epochId), address] : undefined,
-    chainId: sepolia.id,
+    chainId: activeChain.id,
     query: { enabled: !!address && epoch.resolved },
   });
 

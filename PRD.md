@@ -102,16 +102,16 @@ There is no fee/treasury split within the MintingCurve contract. The entire ETH 
 ### 3.1 Macro Loop (Epoch-Level)
 
 ```
-New Old One announced → Players mint $RITUAL → Community coordinates →
-Players sacrifice $RITUAL during Ritual Phase → Threshold met? →
+Idle (minting always open) → first sacrifice auto-opens a 24h Ritual →
+Players mint + sacrifice $RITUAL, community coordinates → Threshold met? →
 YES: Old One summoned, participants claim tiered ERC-1155 artifacts →
-  Next epoch threshold increases 1.3x
-NO: Sacrifice was made but summoning failed, consolation artifacts →
-  Next epoch threshold decreases 20%
-→ Next Old One announced → Repeat
+  Next threshold +150k, Old One advances (loops 5→1)
+NO: Sacrifice was made but summoning failed, Shattered Ritual mementos →
+  Next threshold ×0.75 (floor 25k), same Old One retries
+→ Contract idles with nextThreshold() pre-computed → next sacrifice opens the next epoch → Repeat
 ```
 
-**Epoch cadence**: 3 days total (48h Gathering + 24h Ritual), with ~1 day gap between epochs. Target: 2 epochs per week during active periods.
+**Self-perpetuating** — no owner in the loop. **Epoch cadence**: 24h Ritual, opened on demand by the first sacrifice (Gathering collapsed). Idle gap between summonings is player-driven, not fixed; minting stays open throughout. Genesis threshold 75k, escalation on-chain.
 
 ### 3.2 Micro Loop (Session-Level — The Gacha)
 
@@ -280,8 +280,8 @@ Player wants another pull → Repeat
 
 **Acceptance Criteria**:
 - Epoch status bar at top of page showing:
-  - Current phase (Gathering / Ritual / Pending Resolution / Resolved) with colored indicator
-  - Countdown timer to next phase transition (HH:MM:SS, updates every second)
+  - Current phase (Idle / Ritual / Pending Resolution / Resolved) with colored indicator
+  - Countdown timer to ritualEnd during the Ritual phase (HH:MM:SS, updates every second)
   - Old One name/identity for current epoch
   - User's cult rank (with rank color)
 - Collective progress indicator:
@@ -675,7 +675,7 @@ Gold/Rupture:   #F59E0B (gold — legendary tier)
 
 ### 8.7 Pages & Navigation
 
-- **`/` (Home)**: Main summoning page. Header includes "About" nav link (inline on desktop, separate row on mobile). When wallet is not connected, shows a hero/onboarding section: "Burn $RITUAL tokens. Receive eldritch glyphs. Summon the Old Ones." with a "How it works" link to the About page. During Gathering phase with wallet connected, shows guidance text in place of the hidden sacrifice panel.
+- **`/` (Home)**: Main summoning page. Header includes "About" nav link (inline on desktop, separate row on mobile). When wallet is not connected, shows a hero/onboarding section: "Burn $RITUAL tokens. Receive eldritch glyphs. Summon the Old Ones." with a "How it works" link to the About page. When idle (no active summoning) with wallet connected, shows the "Begin the Summoning" panel — the first sacrifice auto-opens the next epoch.
 - **`/about`**: Mythos-flavored explainer page with smooth-scroll Framer Motion sections: the pitch ("Ethereum used to be fun"), 4-step ritual walkthrough, interactive glyph tier grid, cult rank table, "Why" philosophy section, fully on-chain feature grid, and "Enter the Ritual" CTA. Uses the same design system (dark theme, Crimson Text headings, purple accents).
 - **Channeling Overlay**: Changed from a full-screen dark overlay (which made the app appear frozen) to a compact floating card in the bottom-right corner. Users can continue interacting with the app while VRF processes.
 

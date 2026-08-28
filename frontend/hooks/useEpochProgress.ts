@@ -10,7 +10,7 @@
 "use client";
 
 import { useReadContract } from "wagmi";
-import { sepolia } from "wagmi/chains";
+import { activeChain } from "@/lib/chains";
 import { SUMMONING_ENGINE_ADDRESS, SUMMONING_ENGINE_ABI } from "@/lib/contracts";
 import { OLD_ONES } from "@/lib/constants";
 import { getStageForProgress, type PortalStage } from "@/components/portal/PortalStages";
@@ -48,7 +48,7 @@ export function useEpochProgress(): {
     address: SUMMONING_ENGINE_ADDRESS,
     abi: SUMMONING_ENGINE_ABI,
     functionName: "currentEpochId",
-    chainId: sepolia.id,
+    chainId: activeChain.id,
     query: { refetchInterval: 30_000 },
   });
 
@@ -56,7 +56,7 @@ export function useEpochProgress(): {
     address: SUMMONING_ENGINE_ADDRESS,
     abi: SUMMONING_ENGINE_ABI,
     functionName: "getCurrentPhase",
-    chainId: sepolia.id,
+    chainId: activeChain.id,
     query: { refetchInterval: 15_000 },
   });
 
@@ -69,7 +69,7 @@ export function useEpochProgress(): {
     abi: SUMMONING_ENGINE_ABI,
     functionName: "getEpoch",
     args: currentEpochId !== undefined ? [currentEpochId] : undefined,
-    chainId: sepolia.id,
+    chainId: activeChain.id,
     query: {
       enabled: currentEpochId !== undefined && currentEpochId > 0n,
       refetchInterval: 15_000,

@@ -170,7 +170,7 @@ export default function PreLaunchModal() {
               >
                 The veil grows thin.
                 <br />
-                The cult is gathering.
+                The first sacrifice opens the portal.
               </p>
             )}
 
@@ -201,7 +201,7 @@ export default function PreLaunchModal() {
             )}
 
             <p className="text-[12px] text-gray-400 font-mono font-bold tracking-wider mt-6 italic">
-              Be first through the portal when the gathering begins.
+              Be the one whose sacrifice opens the first summoning.
             </p>
 
             <button

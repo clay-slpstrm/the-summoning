@@ -70,16 +70,18 @@ contract DeployMainnet is Script {
             multisig // royalty receiver
         );
 
-        // 5. Deploy SummoningEngine — multisig is owner. Mainnet durations are
-        //    hard-coded here to the audited values (48h gathering + 24h ritual);
-        //    the constructor params exist so Sepolia rehearsals can use shorter
-        //    durations without diverging from committed source (audit I-01).
+        // 5. Deploy SummoningEngine — multisig is owner. Self-perpetuating config:
+        //    Gathering is collapsed (0) so the first sacrifice auto-opens the epoch
+        //    directly into the 24h Ritual window; thresholds and Old Ones escalate
+        //    on-chain with no owner in the loop. The constructor params exist so
+        //    Sepolia rehearsals can use a shorter ritual without diverging from
+        //    committed source (audit I-01).
         SummoningEngine engine = new SummoningEngine(
             address(token),
             address(artifacts),
             address(glyphs),
             multisig,
-            48 hours,
+            0,
             24 hours
         );
 
