@@ -1,0 +1,42 @@
+{
+  "version": "1.0",
+  "chainId": "1",
+  "createdAt": 1787200000000,
+  "meta": {
+    "name": "Phase 0 cutover: point NFTs at the new self-perpetuating SummoningEngine",
+    "description": "artifacts.setEngine + glyphs.setEngine -> 0x5029DDfcb2f6BA72f7C618FFd8B1237c246298d0 (engine-only redeploy, block 25855277, Etherscan-verified + verify-bytecode full match). Old engine 0x5D474E68c08B2aF16dFEd50377B98573e17a5be5 loses mint authority in this same batch and is retired.",
+    "txBuilderVersion": "1.16.5"
+  },
+  "transactions": [
+    {
+      "to": "0x832436cdf21d6732fAfD22938ee2b7617D74af5A",
+      "value": "0",
+      "data": null,
+      "contractMethod": {
+        "inputs": [
+          { "internalType": "address", "name": "_engine", "type": "address" }
+        ],
+        "name": "setEngine",
+        "payable": false
+      },
+      "contractInputsValues": {
+        "_engine": "0x5029DDfcb2f6BA72f7C618FFd8B1237c246298d0"
+      }
+    },
+    {
+      "to": "0xe820607743E95a694Aa50a9BFFf628C3E202D156",
+      "value": "0",
+      "data": null,
+      "contractMethod": {
+        "inputs": [
+          { "internalType": "address", "name": "_engine", "type": "address" }
+        ],
+        "name": "setEngine",
+        "payable": false
+      },
+      "contractInputsValues": {
+        "_engine": "0x5029DDfcb2f6BA72f7C618FFd8B1237c246298d0"
+      }
+    }
+  ]
+}
