@@ -152,7 +152,7 @@ export default function AboutPage() {
               {
                 step: "II",
                 title: "Sacrifice to the Void",
-                desc: "When the ritual phase opens, burn your $RITUAL. Every sacrifice feeds the portal and earns you a provably fair Eldritch Glyph, an on-chain ERC-1155 NFT with a random rune, tier, and lore fragment.",
+                desc: "Burn your $RITUAL whenever you choose. If no summoning is active, your sacrifice IS the beginning: it opens a 24-hour ritual on the spot — no schedule, no announcement, no one's permission. Every burn feeds the portal and earns provably fair Eldritch Glyphs, on-chain ERC-1155 NFTs with a random rune, tier, and lore fragment.",
                 color: "#A855F7",
               },
               {
@@ -164,7 +164,7 @@ export default function AboutPage() {
               {
                 step: "IV",
                 title: "Summon the Old One",
-                desc: "If the collective sacrifice meets the threshold before time runs out, the summoning succeeds. Top contributors earn tiered artifacts: Harbinger, Acolyte, or Cultist. If it fails? You receive a Shattered Ritual. Proof you tried.",
+                desc: "If the collective sacrifice meets the threshold before the 24 hours run out, the summoning succeeds — the threshold rises and the next Old One awaits. If it fails, the threshold eases and the same Old One waits for the cult to regroup. Top contributors earn tiered artifacts: Harbinger, Acolyte, or Cultist. Failure mints the Shattered Ritual. Proof you tried. Either way, the game never stops: the next sacrifice always opens the next summoning.",
                 color: "#EF4444",
               },
             ].map((item) => (
