@@ -1356,13 +1356,13 @@ User clicks "SACRIFICE" in SacrificePanel
 
 ### 6.2 Epoch Lifecycle Flow
 
-> **⚠️ SELF-PERPETUATING LIFECYCLE — implemented in source (2026-08-12), NOT yet on mainnet.**
-> The flow below is the **new demand-driven design**, with no owner in the loop. It is built
-> and tested in the repo but the **deployed mainnet contract is still the old owner-driven
-> engine** — this takes effect on the pending engine-only redeploy (new `SummoningEngine` +
-> Safe `glyphs.setEngine`/`artifacts.setEngine`; Sepolia rehearsal first). It ships
-> **independently** of the Veil Protocol (decoupled — Veil is separate contracts funded by a
-> treasury RITUAL reserve). See `~/.claude/plans/polymorphic-knitting-kitten.md`.
+> **✅ SELF-PERPETUATING LIFECYCLE — LIVE ON MAINNET (2026-08-28).**
+> The flow below is the deployed demand-driven design, with no owner in the loop.
+> Mainnet engine: `0x5029DDfcb2f6BA72f7C618FFd8B1237c246298d0` (block 25855277, verified,
+> bytecode full match; Safe re-pointed both NFT contracts via a 2-of-3 `setEngine` batch —
+> the old engine `0x5D47…5be5` is retired). Rehearsal + security record: AUDIT-PHASE0.md.
+> Ships independently of the Veil Protocol (decoupled — Veil is separate contracts funded
+> by a treasury RITUAL reserve).
 > Key points: no Gathering phase (`GATHERING_DURATION = 0`); the first `commitRitual` when no
 > epoch is active/unresolved auto-opens a 24h ritual and counts as the opening contribution;
 > threshold + Old One escalate on-chain; resolution stays permissionless; the First Cultists

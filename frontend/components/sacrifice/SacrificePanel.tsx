@@ -18,7 +18,7 @@
 
 import { useState, useEffect } from "react";
 import { useAccount, useReadContract } from "wagmi";
-import { sepolia } from "wagmi/chains";
+import { activeChain } from "@/lib/chains";
 import { parseEther, formatEther } from "viem";
 import {
   useCommitRitual,
@@ -58,7 +58,7 @@ export default function SacrificePanel({ epoch }: { epoch: EpochData }) {
     abi: SUMMONING_ENGINE_ABI,
     functionName: "lastSacrificeTime",
     args: address ? [address] : undefined,
-    chainId: sepolia.id,
+    chainId: activeChain.id,
     query: { enabled: !!address },
   });
 
@@ -68,7 +68,7 @@ export default function SacrificePanel({ epoch }: { epoch: EpochData }) {
     abi: SUMMONING_ENGINE_ABI,
     functionName: "getContribution",
     args: address ? [BigInt(epoch.epochId), address] : undefined,
-    chainId: sepolia.id,
+    chainId: activeChain.id,
     query: { enabled: !!address },
   });
 

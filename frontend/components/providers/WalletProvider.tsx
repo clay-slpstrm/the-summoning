@@ -7,18 +7,22 @@ import {
   type AvatarComponent,
 } from "@rainbow-me/rainbowkit";
 import { WagmiProvider, http } from "wagmi";
-import { sepolia } from "wagmi/chains";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { type ReactNode } from "react";
+import { activeChain } from "@/lib/chains";
 import { GLYPH_TIERS, RUNE_SHAPES } from "@/lib/constants";
 import "@rainbow-me/rainbowkit/styles.css";
 
+// Chain comes from NEXT_PUBLIC_CHAIN_ID via lib/chains (mainnet in prod builds,
+// Sepolia in dev). Hardcoding sepolia here previously pinned WALLET WRITES to
+// Sepolia even in mainnet builds — reads worked (transport = env RPC), but any
+// mint/sacrifice would have demanded a network switch to Sepolia.
 const config = getDefaultConfig({
   appName: "The Summoning",
   projectId: process.env.NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID || "placeholder",
-  chains: [sepolia],
+  chains: [activeChain],
   transports: {
-    [sepolia.id]: http(
+    [activeChain.id]: http(
       process.env.NEXT_PUBLIC_RPC_URL || "https://ethereum-sepolia-rpc.publicnode.com"
     ),
   },

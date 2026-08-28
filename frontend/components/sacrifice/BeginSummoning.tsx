@@ -16,7 +16,7 @@
 
 import { useState, useEffect } from "react";
 import { useAccount, useReadContract } from "wagmi";
-import { sepolia } from "wagmi/chains";
+import { activeChain } from "@/lib/chains";
 import { parseEther, formatEther } from "viem";
 import {
   useCommitRitual,
@@ -62,7 +62,7 @@ export default function BeginSummoning({
     address: SUMMONING_ENGINE_ADDRESS,
     abi: SUMMONING_ENGINE_ABI,
     functionName: "nextThreshold",
-    chainId: sepolia.id,
+    chainId: activeChain.id,
     query: { refetchInterval: 30_000 },
   });
 

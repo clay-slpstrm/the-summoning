@@ -196,18 +196,16 @@ Buttons: bg gradient(135deg, #4c1d95, #7c3aed), uppercase, tracking-widest, seri
 
 ## Critical Implementation Notes
 
-> **⚠️ SELF-PERPETUATING REDESIGN — implemented in source, NOT yet on mainnet (built 2026-08-12).**
-> The epoch lifecycle is now demand-driven with no owner in the loop: the first
+> **✅ SELF-PERPETUATING ENGINE LIVE ON MAINNET (2026-08-28).**
+> The epoch lifecycle is demand-driven with no owner in the loop: the first
 > `commitRitual` (when no epoch is active or the current one is resolved) auto-opens a 24h
 > ritual (Gathering collapsed, `GATHERING_DURATION = 0`), thresholds escalate on-chain
 > (genesis 75k; WIN `+150k` linear; LOSS `×0.75`, floor 25k), and the Old One advances on
 > win / retries on loss (loop 5→1). `startEpoch` remains only as an owner override.
-> This ships **independently** of the Veil Protocol (decoupled — Veil is separate contracts
-> funded by a treasury RITUAL reserve, no Summoning redeploy needed for it).
-> **The deployed mainnet contract is still the old owner-driven engine** — CONTRACT_PARAMS
-> and the notes below describe the new source; they take effect on the pending engine-only
-> redeploy (new `SummoningEngine` + Safe `glyphs.setEngine`/`artifacts.setEngine`). Sepolia
-> rehearsal pending. See `~/.claude/plans/polymorphic-knitting-kitten.md`.
+> Mainnet engine: `0x5029DDfcb2f6BA72f7C618FFd8B1237c246298d0` (block 25855277,
+> Etherscan-verified, verify-bytecode full match, Safe-owned; both NFT contracts re-pointed
+> via 2-of-3 `setEngine` batch). The old engine `0x5D47…5be5` is retired. Rehearsal +
+> security record: AUDIT-PHASE0.md. Ships independently of the Veil Protocol (decoupled).
 
 1. **Glyphs are on-chain ERC-1155 NFTs** minted by the EldritchGlyphs contract via **Chainlink VRF**. Tier, rune, and lore are provably fair random assignments. The backend is an event indexer — it does NOT assign glyphs.
 

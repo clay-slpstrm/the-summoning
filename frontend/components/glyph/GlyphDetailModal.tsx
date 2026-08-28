@@ -3,7 +3,7 @@
 import { useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { useReadContract } from "wagmi";
-import { sepolia } from "wagmi/chains";
+import { activeChain } from "@/lib/chains";
 import { useGlyphStore } from "@/stores/glyphStore";
 import { GLYPH_TIERS, OLD_ONES, RUNE_SHAPES } from "@/lib/constants";
 import {
@@ -78,7 +78,7 @@ function GlyphDetailContent({
     abi: SUMMONING_ENGINE_ABI,
     functionName: "getEpoch",
     args: [BigInt(glyph.epochId)],
-    chainId: sepolia.id,
+    chainId: activeChain.id,
   });
 
   const oldOneId = epochData ? Number(epochData[0]) : 0;

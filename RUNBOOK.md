@@ -1,11 +1,11 @@
 # RUNBOOK — Operating the Self-Perpetuating Summoning
 
-> **⚠️ Describes the self-perpetuating design (built 2026-08-12), which is NOT yet on
-> mainnet.** The deployed mainnet engine is still the old owner-driven contract; this
-> model takes effect on the pending **engine-only redeploy** (new `SummoningEngine` +
-> Safe `glyphs.setEngine`/`artifacts.setEngine`; Sepolia rehearsal first). The prior
-> manual-start SOP (per-epoch `startEpoch`, threshold/Old One choice) is preserved in git
-> history if you need it before the redeploy. See `~/.claude/plans/polymorphic-knitting-kitten.md`.
+> **✅ LIVE ON MAINNET (2026-08-28).** The self-perpetuating engine is deployed
+> (`0x5029…98d0`, block 25855277, Etherscan-verified + verify-bytecode full match) and the
+> Safe has re-pointed both NFT contracts at it (`artifacts.setEngine` + `glyphs.setEngine`,
+> executed 2-of-3). The old owner-driven engine (`0x5D47…5be5`) is retired — do not
+> interact with it. Sepolia rehearsal record: AUDIT-PHASE0.md + memory. The prior
+> manual-start SOP is preserved in git history.
 
 **There is no owner in the gameplay loop.** Epochs open on demand and escalate on-chain:
 the first `commitRitual` when no epoch is active or the current one is resolved auto-opens
@@ -14,11 +14,11 @@ a **24h ritual** (Gathering collapsed), threshold and Old One derive on-chain, a
 `startEpoch`, no per-epoch threshold choice, no per-epoch runbook. Operations are limited
 to **keeping the keeper + VRF healthy, watching alerts, and emergency levers.**
 
-## Addresses (mainnet — CURRENT owner-driven engine, to be replaced on redeploy)
+## Addresses (mainnet, live)
 
 | Contract | Address |
 |---|---|
-| SummoningEngine | `0x5D474E68c08B2aF16dFEd50377B98573e17a5be5` *(replaced on redeploy)* |
+| SummoningEngine | `0x5029DDfcb2f6BA72f7C618FFd8B1237c246298d0` (self-perpetuating, deployed 2026-08-28 @ block 25855277) |
 | RitualToken | `0x8daA5B21136de9B5ac43fd89fDc98cDe934E7863` |
 | MintingCurve | `0x8c7c1C76f32277EDc12B28440224fEF0f6985462` |
 | ElderArtifacts | `0x832436cdf21d6732fAfD22938ee2b7617D74af5A` |
@@ -26,7 +26,7 @@ to **keeping the keeper + VRF healthy, watching alerts, and emergency levers.**
 | Safe (owner, 2-of-3) | `0x67c6f1dA08Cd99A661ec6f77A060E985d9672baB` |
 
 `RPC` below means any mainnet RPC URL (e.g. the Alchemy endpoint in `backend/.env.mainnet`).
-After the redeploy, swap the SummoningEngine address here and in backend/frontend env.
+
 
 ## Old One IDs (on-chain rotation: advance-on-win looping 5→1, retry-on-loss)
 
@@ -82,7 +82,7 @@ no action needed; the next epoch auto-opens on the next sacrifice).
 - [ ] If not, an `epoch_resolution_overdue` alert fires at 30 min. Resolve manually — anyone
   can, once ritualEnd passes:
   ```bash
-  cast send 0x5D474E68c08B2aF16dFEd50377B98573e17a5be5 "resolveEpoch()" --rpc-url $RPC --account <any-funded-account>
+  cast send 0x5029DDfcb2f6BA72f7C618FFd8B1237c246298d0 "resolveEpoch()" --rpc-url $RPC --account <any-funded-account>
   ```
   Then check Render `[KEEPER]` logs for the root cause (out of gas ETH? RPC failing?).
 
