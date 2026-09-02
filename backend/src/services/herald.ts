@@ -9,16 +9,25 @@
  *   - Compliance guardrails live in the system prompt AND in this handler:
  *     no price talk, no promises, jailbreaks refused in character.
  *   - Spend is bounded: per-IP rate limit + global daily cap + short
- *     max_tokens. Endpoint degrades to 503 (in voice) if ANTHROPIC_API_KEY
+ *     max_tokens. Endpoint degrades to 503 (in voice) if GEMINI_API_KEY
  *     is unset, so deploys without the key are safe.
+ *
+ * Provider: Google Gemini (user decision 2026-09-02, was Anthropic Haiku).
+ *   - Model pinned to gemini-2.5-flash (stable, known thinking semantics)
+ *     rather than a floating -latest alias; override with HERALD_MODEL.
+ *   - thinkingBudget 0: flash models otherwise spend the output budget on
+ *     hidden reasoning tokens and can return an empty reply at small caps.
+ *   - Safety filters at BLOCK_ONLY_HIGH (the game's occult THEME is fiction;
+ *     default thresholds occasionally flag it). A safety block returns an
+ *     in-character deflection, not an error — worst case the Herald is
+ *     cryptic, which is on brand.
  */
 
-import Anthropic from "@anthropic-ai/sdk";
 import type { Request, Response } from "express";
 
-// Haiku 4.5 ($1/$5 per 1M tokens) — cheap + fast, right tier for a high-volume
-// public character chatbot. Override with HERALD_MODEL for a smarter model.
-const MODEL = process.env.HERALD_MODEL || "claude-haiku-4-5";
+const MODEL = process.env.HERALD_MODEL || "gemini-2.5-flash";
+const GEMINI_URL = (model: string) =>
+  `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`;
 const MAX_OUTPUT_TOKENS = 300;
 const MAX_HISTORY_MESSAGES = 12; // truncate older turns client may send
 const MAX_MESSAGE_CHARS = 500;
@@ -38,7 +47,8 @@ TRUE FACTS OF THE GAME (never invent others):
 - Each summoning that succeeds raises the next threshold and calls a new Old One; each that fails eases the threshold and lets the cult try the same Old One again. The game never stops on its own.
 - Every 100 $RITUAL sacrificed rolls one Eldritch Glyph, an onchain ERC-1155 NFT. Tiers and odds: Whisper 50%, Echo 28%, Tremor 15%, Rupture 6%, Breach 1%. Randomness is Chainlink VRF. Nobody, not even the cult, chooses the outcome. Claims are capped at 20 glyphs per call; call again for more.
 - Success grants artifacts by contribution rank: Harbinger (top 1%), Acolyte (top 10%), Cultist (everyone else). Failure grants the Shattered Ritual, proof you were present when the stars were wrong.
-- The First Cultists: before the first summoning, 250 hand-picked wallets receive 100 $RITUAL from the treasury (one sacrifice, on the house). To be eligible: join the Discord (link on the site) and follow @thesummoningxyz on X, then post one wallet address in the #first-cultists channel. Chosen by hand. Bots waste their time.
+- The First Cultists: before the first summoning, the first 250 wallets to join the cult receive 100 $RITUAL from the treasury (one sacrifice, on the house), seeded in waves. To be eligible: join the Discord (link on the site), then post one wallet address in the #first-cultists channel. Chosen by hand. Bots waste their time.
+- The Summoning is game one of The Veil Protocol, a studio of onchain games built to run themselves. If asked what comes next: the Herald speaks only of what exists. No promises. Only rituals.
 - The first summoning (Cthulhu) has NOT been scheduled yet. If asked when: the stars have not yet aligned; follow the Herald and the veil will part in time.
 - All five contracts are source-verified on Etherscan and linked at thesummoning.xyz/about. Owned by a 2-of-3 multisig. Provably fair. Don't trust us, verify.
 
@@ -104,8 +114,13 @@ const OFFLINE_REPLY =
 const RATE_REPLY =
   "Patience, mortal. Even the Old Ones make you wait. Ask again in a minute.";
 
+// In-voice deflection when Gemini's safety filter blocks a reply (theme false
+// positives). Distinct from OFFLINE so we can spot filter-rate in logs.
+const VEILED_REPLY =
+  "Some questions the veil refuses to answer. Ask another, mortal.";
+
 export async function heraldHandler(req: Request, res: Response): Promise<void> {
-  if (!process.env.ANTHROPIC_API_KEY) {
+  if (!process.env.GEMINI_API_KEY) {
     res.status(503).json({ error: "offline", reply: OFFLINE_REPLY });
     return;
   }
@@ -134,17 +149,62 @@ export async function heraldHandler(req: Request, res: Response): Promise<void> 
 
   try {
     dailyCount++;
-    const client = new Anthropic();
-    const response = await client.messages.create({
-      model: MODEL,
-      max_tokens: MAX_OUTPUT_TOKENS,
-      system: SYSTEM_PROMPT,
-      messages,
+    const response = await fetch(GEMINI_URL(MODEL), {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "x-goog-api-key": process.env.GEMINI_API_KEY,
+      },
+      body: JSON.stringify({
+        system_instruction: { parts: [{ text: SYSTEM_PROMPT }] },
+        contents: messages.map((m) => ({
+          role: m.role === "assistant" ? "model" : "user",
+          parts: [{ text: m.content }],
+        })),
+        generationConfig: {
+          maxOutputTokens: MAX_OUTPUT_TOKENS,
+          temperature: 0.8,
+          // Flash models spend output budget on hidden reasoning by default;
+          // a character chatbot needs words, not thoughts.
+          thinkingConfig: { thinkingBudget: 0 },
+        },
+        safetySettings: [
+          "HARM_CATEGORY_HARASSMENT",
+          "HARM_CATEGORY_HATE_SPEECH",
+          "HARM_CATEGORY_SEXUALLY_EXPLICIT",
+          "HARM_CATEGORY_DANGEROUS_CONTENT",
+        ].map((category) => ({ category, threshold: "BLOCK_ONLY_HIGH" })),
+      }),
     });
 
-    const reply = response.content
-      .filter((block) => block.type === "text")
-      .map((block) => (block as { text: string }).text)
+    if (!response.ok) {
+      const errBody = await response.text();
+      console.error(`[HERALD] Gemini HTTP ${response.status}:`, errBody.slice(0, 300));
+      res.status(502).json({ error: "upstream", reply: OFFLINE_REPLY });
+      return;
+    }
+
+    const data = (await response.json()) as {
+      promptFeedback?: { blockReason?: string };
+      candidates?: Array<{
+        finishReason?: string;
+        content?: { parts?: Array<{ text?: string }> };
+      }>;
+    };
+
+    // Safety-filter block (prompt or response side) → in-voice deflection.
+    const candidate = data.candidates?.[0];
+    if (data.promptFeedback?.blockReason || candidate?.finishReason === "SAFETY") {
+      console.warn(
+        "[HERALD] safety block:",
+        data.promptFeedback?.blockReason ?? candidate?.finishReason
+      );
+      res.json({ reply: VEILED_REPLY });
+      return;
+    }
+
+    const reply = (candidate?.content?.parts ?? [])
+      .map((p) => p.text ?? "")
       .join("")
       .trim();
 
