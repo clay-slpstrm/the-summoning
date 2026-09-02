@@ -36,6 +36,9 @@ export default function Footer({ showAbout = false }: { showAbout?: boolean }) {
             The Ritual
           </Link>
         )}
+        <Link href="/codex" className={linkClass}>
+          How it runs
+        </Link>
       </div>
       <p className="text-center text-[11px] font-mono font-bold tracking-[2px] uppercase text-gray-500 mt-5">
         No promises. Only rituals.
