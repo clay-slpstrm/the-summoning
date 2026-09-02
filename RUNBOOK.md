@@ -4,7 +4,7 @@
 > (`0x5029…98d0`, block 25855277, Etherscan-verified + verify-bytecode full match) and the
 > Safe has re-pointed both NFT contracts at it (`artifacts.setEngine` + `glyphs.setEngine`,
 > executed 2-of-3). The old owner-driven engine (`0x5D47…5be5`) is retired — do not
-> interact with it. Sepolia rehearsal record: AUDIT-PHASE0.md + memory. The prior
+> interact with it. Sepolia rehearsal and security record: AUDIT-PHASE0.md. The prior
 > manual-start SOP is preserved in git history.
 
 **There is no owner in the gameplay loop.** Epochs open on demand and escalate on-chain:

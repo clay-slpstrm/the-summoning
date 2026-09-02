@@ -61,3 +61,9 @@ backend/.env.rehearsal
 frontend/.env.local.rehearsal
 backend/.env.pre-rehearsal.bak
 frontend/.env.local.pre-rehearsal.bak
+
+# internal planning/marketing docs (kept local, out of the public tree)
+MARKETING.md
+art-prompts.md
+content/
+.claude/skills/brand-voice/
