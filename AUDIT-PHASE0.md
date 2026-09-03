@@ -276,3 +276,36 @@ mints). The VRF subscription is unaffected (glyphs contract unchanged).
 Internal review by an AI auditor, not a substitute for an independent third-party
 audit. Findings reflect the reviewed commit only; economic observations (I-01)
 assume the current bonding-curve pricing and no external market for RITUAL.
+
+---
+
+## Addendum (2026-09-03): `Offering.sol` — self-serve First Cultists claim
+
+Small new mainnet contract (~70 lines) replacing the hand-curated drop. Reviewed
+with the same lens as the Phase 0 diff; no findings above Informational.
+
+**Design-level security argument.** $RITUAL has no sell path (no curve buyback,
+no pool), so the classic airdrop-sybil profit motive is absent: farming yields
+tokens usable only for playing. Residual risk is seat-hoarding, bounded by
+MIN_ETH_BALANCE (0.005 ETH per claiming wallet) and DAILY_CLAIM_CAP (25/day →
+the 250-seat roll drains over ≥10 days). Deliberately no `tx.origin` gate: it
+would exclude AA smart-account users and the damage ceiling does not justify it.
+
+**Checked and clean:** CEI ordering (claimed/counters set before transfer) +
+`nonReentrant`; no ETH held; owner (Safe) limited to `sweep` — cannot alter
+caps, amounts, or claims; day arithmetic uses integer UTC-day buckets (no
+midnight-straddle double-cap); `seatsRemaining` binds on min(cap, funding);
+underfunded state reverts `Exhausted` before any state change; re-funding after
+sweep re-opens with counters intact (cannot resurrect consumed seats).
+
+**Informational:** the two `Offering__TransferFailed` branches are unreachable
+with RitualToken (OZ ERC-20 reverts, never returns false) — defensive guards of
+the same class as I-04; accepted uncovered. `msg.sender.balance` check reads
+the balance at claim time — trivially satisfiable by moving the same 0.005 ETH
+between sybil wallets sequentially, which the daily cap already rate-limits;
+the filter's job is stopping zero-effort swarms, not determined humans.
+
+**Verification:** 15 tests (happy path, double-claim, balance floor incl. exact
+boundary, daily cap 25th/26th + UTC rollover, full 250-seat exhaustion, sweep
+authority/recovery/re-fund, 1000-run fuzz on cap invariants). 100% line / 100%
+function coverage; 261/261 repo-wide.
