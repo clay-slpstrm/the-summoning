@@ -1,0 +1,1139 @@
+{
+  "version": "1.0",
+  "chainId": "1",
+  "createdAt": 1788551979164,
+  "meta": {
+    "name": "Fund the Offering with a 0.1 ETH treasury loop (29 cycles)",
+    "description": "29x [MintingCurve.mint(min 875 RITUAL) with 0.1 ETH -> MintingCurve.withdraw(Safe)] cycling the same 0.1 ETH (curve proceeds are Safe-owned; withdraw returns the ETH mid-batch for the next mint). Yields ~25,491 RITUAL, then transfers exactly 25,000 to the Offering 0x47602E8a...FA42, opening all 250 seats. Safe must hold >= 0.1 ETH. Simulate on Tenderly before signing: the sim executes the full loop.",
+    "txBuilderVersion": "1.16.5"
+  },
+  "transactions": [
+    {
+      "to": "0x8c7c1C76f32277EDc12B28440224fEF0f6985462",
+      "value": "100000000000000000",
+      "data": null,
+      "contractMethod": {
+        "inputs": [
+          {
+            "internalType": "uint256",
+            "name": "minTokens",
+            "type": "uint256"
+          }
+        ],
+        "name": "mint",
+        "payable": true
+      },
+      "contractInputsValues": {
+        "minTokens": "875000000000000000000"
+      }
+    },
+    {
+      "to": "0x8c7c1C76f32277EDc12B28440224fEF0f6985462",
+      "value": "0",
+      "data": null,
+      "contractMethod": {
+        "inputs": [
+          {
+            "internalType": "address",
+            "name": "to",
+            "type": "address"
+          }
+        ],
+        "name": "withdraw",
+        "payable": false
+      },
+      "contractInputsValues": {
+        "to": "0x67c6f1dA08Cd99A661ec6f77A060E985d9672baB"
+      }
+    },
+    {
+      "to": "0x8c7c1C76f32277EDc12B28440224fEF0f6985462",
+      "value": "100000000000000000",
+      "data": null,
+      "contractMethod": {
+        "inputs": [
+          {
+            "internalType": "uint256",
+            "name": "minTokens",
+            "type": "uint256"
+          }
+        ],
+        "name": "mint",
+        "payable": true
+      },
+      "contractInputsValues": {
+        "minTokens": "875000000000000000000"
+      }
+    },
+    {
+      "to": "0x8c7c1C76f32277EDc12B28440224fEF0f6985462",
+      "value": "0",
+      "data": null,
+      "contractMethod": {
+        "inputs": [
+          {
+            "internalType": "address",
+            "name": "to",
+            "type": "address"
+          }
+        ],
+        "name": "withdraw",
+        "payable": false
+      },
+      "contractInputsValues": {
+        "to": "0x67c6f1dA08Cd99A661ec6f77A060E985d9672baB"
+      }
+    },
+    {
+      "to": "0x8c7c1C76f32277EDc12B28440224fEF0f6985462",
+      "value": "100000000000000000",
+      "data": null,
+      "contractMethod": {
+        "inputs": [
+          {
+            "internalType": "uint256",
+            "name": "minTokens",
+            "type": "uint256"
+          }
+        ],
+        "name": "mint",
+        "payable": true
+      },
+      "contractInputsValues": {
+        "minTokens": "875000000000000000000"
+      }
+    },
+    {
+      "to": "0x8c7c1C76f32277EDc12B28440224fEF0f6985462",
+      "value": "0",
+      "data": null,
+      "contractMethod": {
+        "inputs": [
+          {
+            "internalType": "address",
+            "name": "to",
+            "type": "address"
+          }
+        ],
+        "name": "withdraw",
+        "payable": false
+      },
+      "contractInputsValues": {
+        "to": "0x67c6f1dA08Cd99A661ec6f77A060E985d9672baB"
+      }
+    },
+    {
+      "to": "0x8c7c1C76f32277EDc12B28440224fEF0f6985462",
+      "value": "100000000000000000",
+      "data": null,
+      "contractMethod": {
+        "inputs": [
+          {
+            "internalType": "uint256",
+            "name": "minTokens",
+            "type": "uint256"
+          }
+        ],
+        "name": "mint",
+        "payable": true
+      },
+      "contractInputsValues": {
+        "minTokens": "875000000000000000000"
+      }
+    },
+    {
+      "to": "0x8c7c1C76f32277EDc12B28440224fEF0f6985462",
+      "value": "0",
+      "data": null,
+      "contractMethod": {
+        "inputs": [
+          {
+            "internalType": "address",
+            "name": "to",
+            "type": "address"
+          }
+        ],
+        "name": "withdraw",
+        "payable": false
+      },
+      "contractInputsValues": {
+        "to": "0x67c6f1dA08Cd99A661ec6f77A060E985d9672baB"
+      }
+    },
+    {
+      "to": "0x8c7c1C76f32277EDc12B28440224fEF0f6985462",
+      "value": "100000000000000000",
+      "data": null,
+      "contractMethod": {
+        "inputs": [
+          {
+            "internalType": "uint256",
+            "name": "minTokens",
+            "type": "uint256"
+          }
+        ],
+        "name": "mint",
+        "payable": true
+      },
+      "contractInputsValues": {
+        "minTokens": "875000000000000000000"
+      }
+    },
+    {
+      "to": "0x8c7c1C76f32277EDc12B28440224fEF0f6985462",
+      "value": "0",
+      "data": null,
+      "contractMethod": {
+        "inputs": [
+          {
+            "internalType": "address",
+            "name": "to",
+            "type": "address"
+          }
+        ],
+        "name": "withdraw",
+        "payable": false
+      },
+      "contractInputsValues": {
+        "to": "0x67c6f1dA08Cd99A661ec6f77A060E985d9672baB"
+      }
+    },
+    {
+      "to": "0x8c7c1C76f32277EDc12B28440224fEF0f6985462",
+      "value": "100000000000000000",
+      "data": null,
+      "contractMethod": {
+        "inputs": [
+          {
+            "internalType": "uint256",
+            "name": "minTokens",
+            "type": "uint256"
+          }
+        ],
+        "name": "mint",
+        "payable": true
+      },
+      "contractInputsValues": {
+        "minTokens": "875000000000000000000"
+      }
+    },
+    {
+      "to": "0x8c7c1C76f32277EDc12B28440224fEF0f6985462",
+      "value": "0",
+      "data": null,
+      "contractMethod": {
+        "inputs": [
+          {
+            "internalType": "address",
+            "name": "to",
+            "type": "address"
+          }
+        ],
+        "name": "withdraw",
+        "payable": false
+      },
+      "contractInputsValues": {
+        "to": "0x67c6f1dA08Cd99A661ec6f77A060E985d9672baB"
+      }
+    },
+    {
+      "to": "0x8c7c1C76f32277EDc12B28440224fEF0f6985462",
+      "value": "100000000000000000",
+      "data": null,
+      "contractMethod": {
+        "inputs": [
+          {
+            "internalType": "uint256",
+            "name": "minTokens",
+            "type": "uint256"
+          }
+        ],
+        "name": "mint",
+        "payable": true
+      },
+      "contractInputsValues": {
+        "minTokens": "875000000000000000000"
+      }
+    },
+    {
+      "to": "0x8c7c1C76f32277EDc12B28440224fEF0f6985462",
+      "value": "0",
+      "data": null,
+      "contractMethod": {
+        "inputs": [
+          {
+            "internalType": "address",
+            "name": "to",
+            "type": "address"
+          }
+        ],
+        "name": "withdraw",
+        "payable": false
+      },
+      "contractInputsValues": {
+        "to": "0x67c6f1dA08Cd99A661ec6f77A060E985d9672baB"
+      }
+    },
+    {
+      "to": "0x8c7c1C76f32277EDc12B28440224fEF0f6985462",
+      "value": "100000000000000000",
+      "data": null,
+      "contractMethod": {
+        "inputs": [
+          {
+            "internalType": "uint256",
+            "name": "minTokens",
+            "type": "uint256"
+          }
+        ],
+        "name": "mint",
+        "payable": true
+      },
+      "contractInputsValues": {
+        "minTokens": "875000000000000000000"
+      }
+    },
+    {
+      "to": "0x8c7c1C76f32277EDc12B28440224fEF0f6985462",
+      "value": "0",
+      "data": null,
+      "contractMethod": {
+        "inputs": [
+          {
+            "internalType": "address",
+            "name": "to",
+            "type": "address"
+          }
+        ],
+        "name": "withdraw",
+        "payable": false
+      },
+      "contractInputsValues": {
+        "to": "0x67c6f1dA08Cd99A661ec6f77A060E985d9672baB"
+      }
+    },
+    {
+      "to": "0x8c7c1C76f32277EDc12B28440224fEF0f6985462",
+      "value": "100000000000000000",
+      "data": null,
+      "contractMethod": {
+        "inputs": [
+          {
+            "internalType": "uint256",
+            "name": "minTokens",
+            "type": "uint256"
+          }
+        ],
+        "name": "mint",
+        "payable": true
+      },
+      "contractInputsValues": {
+        "minTokens": "875000000000000000000"
+      }
+    },
+    {
+      "to": "0x8c7c1C76f32277EDc12B28440224fEF0f6985462",
+      "value": "0",
+      "data": null,
+      "contractMethod": {
+        "inputs": [
+          {
+            "internalType": "address",
+            "name": "to",
+            "type": "address"
+          }
+        ],
+        "name": "withdraw",
+        "payable": false
+      },
+      "contractInputsValues": {
+        "to": "0x67c6f1dA08Cd99A661ec6f77A060E985d9672baB"
+      }
+    },
+    {
+      "to": "0x8c7c1C76f32277EDc12B28440224fEF0f6985462",
+      "value": "100000000000000000",
+      "data": null,
+      "contractMethod": {
+        "inputs": [
+          {
+            "internalType": "uint256",
+            "name": "minTokens",
+            "type": "uint256"
+          }
+        ],
+        "name": "mint",
+        "payable": true
+      },
+      "contractInputsValues": {
+        "minTokens": "875000000000000000000"
+      }
+    },
+    {
+      "to": "0x8c7c1C76f32277EDc12B28440224fEF0f6985462",
+      "value": "0",
+      "data": null,
+      "contractMethod": {
+        "inputs": [
+          {
+            "internalType": "address",
+            "name": "to",
+            "type": "address"
+          }
+        ],
+        "name": "withdraw",
+        "payable": false
+      },
+      "contractInputsValues": {
+        "to": "0x67c6f1dA08Cd99A661ec6f77A060E985d9672baB"
+      }
+    },
+    {
+      "to": "0x8c7c1C76f32277EDc12B28440224fEF0f6985462",
+      "value": "100000000000000000",
+      "data": null,
+      "contractMethod": {
+        "inputs": [
+          {
+            "internalType": "uint256",
+            "name": "minTokens",
+            "type": "uint256"
+          }
+        ],
+        "name": "mint",
+        "payable": true
+      },
+      "contractInputsValues": {
+        "minTokens": "875000000000000000000"
+      }
+    },
+    {
+      "to": "0x8c7c1C76f32277EDc12B28440224fEF0f6985462",
+      "value": "0",
+      "data": null,
+      "contractMethod": {
+        "inputs": [
+          {
+            "internalType": "address",
+            "name": "to",
+            "type": "address"
+          }
+        ],
+        "name": "withdraw",
+        "payable": false
+      },
+      "contractInputsValues": {
+        "to": "0x67c6f1dA08Cd99A661ec6f77A060E985d9672baB"
+      }
+    },
+    {
+      "to": "0x8c7c1C76f32277EDc12B28440224fEF0f6985462",
+      "value": "100000000000000000",
+      "data": null,
+      "contractMethod": {
+        "inputs": [
+          {
+            "internalType": "uint256",
+            "name": "minTokens",
+            "type": "uint256"
+          }
+        ],
+        "name": "mint",
+        "payable": true
+      },
+      "contractInputsValues": {
+        "minTokens": "875000000000000000000"
+      }
+    },
+    {
+      "to": "0x8c7c1C76f32277EDc12B28440224fEF0f6985462",
+      "value": "0",
+      "data": null,
+      "contractMethod": {
+        "inputs": [
+          {
+            "internalType": "address",
+            "name": "to",
+            "type": "address"
+          }
+        ],
+        "name": "withdraw",
+        "payable": false
+      },
+      "contractInputsValues": {
+        "to": "0x67c6f1dA08Cd99A661ec6f77A060E985d9672baB"
+      }
+    },
+    {
+      "to": "0x8c7c1C76f32277EDc12B28440224fEF0f6985462",
+      "value": "100000000000000000",
+      "data": null,
+      "contractMethod": {
+        "inputs": [
+          {
+            "internalType": "uint256",
+            "name": "minTokens",
+            "type": "uint256"
+          }
+        ],
+        "name": "mint",
+        "payable": true
+      },
+      "contractInputsValues": {
+        "minTokens": "875000000000000000000"
+      }
+    },
+    {
+      "to": "0x8c7c1C76f32277EDc12B28440224fEF0f6985462",
+      "value": "0",
+      "data": null,
+      "contractMethod": {
+        "inputs": [
+          {
+            "internalType": "address",
+            "name": "to",
+            "type": "address"
+          }
+        ],
+        "name": "withdraw",
+        "payable": false
+      },
+      "contractInputsValues": {
+        "to": "0x67c6f1dA08Cd99A661ec6f77A060E985d9672baB"
+      }
+    },
+    {
+      "to": "0x8c7c1C76f32277EDc12B28440224fEF0f6985462",
+      "value": "100000000000000000",
+      "data": null,
+      "contractMethod": {
+        "inputs": [
+          {
+            "internalType": "uint256",
+            "name": "minTokens",
+            "type": "uint256"
+          }
+        ],
+        "name": "mint",
+        "payable": true
+      },
+      "contractInputsValues": {
+        "minTokens": "875000000000000000000"
+      }
+    },
+    {
+      "to": "0x8c7c1C76f32277EDc12B28440224fEF0f6985462",
+      "value": "0",
+      "data": null,
+      "contractMethod": {
+        "inputs": [
+          {
+            "internalType": "address",
+            "name": "to",
+            "type": "address"
+          }
+        ],
+        "name": "withdraw",
+        "payable": false
+      },
+      "contractInputsValues": {
+        "to": "0x67c6f1dA08Cd99A661ec6f77A060E985d9672baB"
+      }
+    },
+    {
+      "to": "0x8c7c1C76f32277EDc12B28440224fEF0f6985462",
+      "value": "100000000000000000",
+      "data": null,
+      "contractMethod": {
+        "inputs": [
+          {
+            "internalType": "uint256",
+            "name": "minTokens",
+            "type": "uint256"
+          }
+        ],
+        "name": "mint",
+        "payable": true
+      },
+      "contractInputsValues": {
+        "minTokens": "875000000000000000000"
+      }
+    },
+    {
+      "to": "0x8c7c1C76f32277EDc12B28440224fEF0f6985462",
+      "value": "0",
+      "data": null,
+      "contractMethod": {
+        "inputs": [
+          {
+            "internalType": "address",
+            "name": "to",
+            "type": "address"
+          }
+        ],
+        "name": "withdraw",
+        "payable": false
+      },
+      "contractInputsValues": {
+        "to": "0x67c6f1dA08Cd99A661ec6f77A060E985d9672baB"
+      }
+    },
+    {
+      "to": "0x8c7c1C76f32277EDc12B28440224fEF0f6985462",
+      "value": "100000000000000000",
+      "data": null,
+      "contractMethod": {
+        "inputs": [
+          {
+            "internalType": "uint256",
+            "name": "minTokens",
+            "type": "uint256"
+          }
+        ],
+        "name": "mint",
+        "payable": true
+      },
+      "contractInputsValues": {
+        "minTokens": "875000000000000000000"
+      }
+    },
+    {
+      "to": "0x8c7c1C76f32277EDc12B28440224fEF0f6985462",
+      "value": "0",
+      "data": null,
+      "contractMethod": {
+        "inputs": [
+          {
+            "internalType": "address",
+            "name": "to",
+            "type": "address"
+          }
+        ],
+        "name": "withdraw",
+        "payable": false
+      },
+      "contractInputsValues": {
+        "to": "0x67c6f1dA08Cd99A661ec6f77A060E985d9672baB"
+      }
+    },
+    {
+      "to": "0x8c7c1C76f32277EDc12B28440224fEF0f6985462",
+      "value": "100000000000000000",
+      "data": null,
+      "contractMethod": {
+        "inputs": [
+          {
+            "internalType": "uint256",
+            "name": "minTokens",
+            "type": "uint256"
+          }
+        ],
+        "name": "mint",
+        "payable": true
+      },
+      "contractInputsValues": {
+        "minTokens": "875000000000000000000"
+      }
+    },
+    {
+      "to": "0x8c7c1C76f32277EDc12B28440224fEF0f6985462",
+      "value": "0",
+      "data": null,
+      "contractMethod": {
+        "inputs": [
+          {
+            "internalType": "address",
+            "name": "to",
+            "type": "address"
+          }
+        ],
+        "name": "withdraw",
+        "payable": false
+      },
+      "contractInputsValues": {
+        "to": "0x67c6f1dA08Cd99A661ec6f77A060E985d9672baB"
+      }
+    },
+    {
+      "to": "0x8c7c1C76f32277EDc12B28440224fEF0f6985462",
+      "value": "100000000000000000",
+      "data": null,
+      "contractMethod": {
+        "inputs": [
+          {
+            "internalType": "uint256",
+            "name": "minTokens",
+            "type": "uint256"
+          }
+        ],
+        "name": "mint",
+        "payable": true
+      },
+      "contractInputsValues": {
+        "minTokens": "875000000000000000000"
+      }
+    },
+    {
+      "to": "0x8c7c1C76f32277EDc12B28440224fEF0f6985462",
+      "value": "0",
+      "data": null,
+      "contractMethod": {
+        "inputs": [
+          {
+            "internalType": "address",
+            "name": "to",
+            "type": "address"
+          }
+        ],
+        "name": "withdraw",
+        "payable": false
+      },
+      "contractInputsValues": {
+        "to": "0x67c6f1dA08Cd99A661ec6f77A060E985d9672baB"
+      }
+    },
+    {
+      "to": "0x8c7c1C76f32277EDc12B28440224fEF0f6985462",
+      "value": "100000000000000000",
+      "data": null,
+      "contractMethod": {
+        "inputs": [
+          {
+            "internalType": "uint256",
+            "name": "minTokens",
+            "type": "uint256"
+          }
+        ],
+        "name": "mint",
+        "payable": true
+      },
+      "contractInputsValues": {
+        "minTokens": "875000000000000000000"
+      }
+    },
+    {
+      "to": "0x8c7c1C76f32277EDc12B28440224fEF0f6985462",
+      "value": "0",
+      "data": null,
+      "contractMethod": {
+        "inputs": [
+          {
+            "internalType": "address",
+            "name": "to",
+            "type": "address"
+          }
+        ],
+        "name": "withdraw",
+        "payable": false
+      },
+      "contractInputsValues": {
+        "to": "0x67c6f1dA08Cd99A661ec6f77A060E985d9672baB"
+      }
+    },
+    {
+      "to": "0x8c7c1C76f32277EDc12B28440224fEF0f6985462",
+      "value": "100000000000000000",
+      "data": null,
+      "contractMethod": {
+        "inputs": [
+          {
+            "internalType": "uint256",
+            "name": "minTokens",
+            "type": "uint256"
+          }
+        ],
+        "name": "mint",
+        "payable": true
+      },
+      "contractInputsValues": {
+        "minTokens": "875000000000000000000"
+      }
+    },
+    {
+      "to": "0x8c7c1C76f32277EDc12B28440224fEF0f6985462",
+      "value": "0",
+      "data": null,
+      "contractMethod": {
+        "inputs": [
+          {
+            "internalType": "address",
+            "name": "to",
+            "type": "address"
+          }
+        ],
+        "name": "withdraw",
+        "payable": false
+      },
+      "contractInputsValues": {
+        "to": "0x67c6f1dA08Cd99A661ec6f77A060E985d9672baB"
+      }
+    },
+    {
+      "to": "0x8c7c1C76f32277EDc12B28440224fEF0f6985462",
+      "value": "100000000000000000",
+      "data": null,
+      "contractMethod": {
+        "inputs": [
+          {
+            "internalType": "uint256",
+            "name": "minTokens",
+            "type": "uint256"
+          }
+        ],
+        "name": "mint",
+        "payable": true
+      },
+      "contractInputsValues": {
+        "minTokens": "875000000000000000000"
+      }
+    },
+    {
+      "to": "0x8c7c1C76f32277EDc12B28440224fEF0f6985462",
+      "value": "0",
+      "data": null,
+      "contractMethod": {
+        "inputs": [
+          {
+            "internalType": "address",
+            "name": "to",
+            "type": "address"
+          }
+        ],
+        "name": "withdraw",
+        "payable": false
+      },
+      "contractInputsValues": {
+        "to": "0x67c6f1dA08Cd99A661ec6f77A060E985d9672baB"
+      }
+    },
+    {
+      "to": "0x8c7c1C76f32277EDc12B28440224fEF0f6985462",
+      "value": "100000000000000000",
+      "data": null,
+      "contractMethod": {
+        "inputs": [
+          {
+            "internalType": "uint256",
+            "name": "minTokens",
+            "type": "uint256"
+          }
+        ],
+        "name": "mint",
+        "payable": true
+      },
+      "contractInputsValues": {
+        "minTokens": "875000000000000000000"
+      }
+    },
+    {
+      "to": "0x8c7c1C76f32277EDc12B28440224fEF0f6985462",
+      "value": "0",
+      "data": null,
+      "contractMethod": {
+        "inputs": [
+          {
+            "internalType": "address",
+            "name": "to",
+            "type": "address"
+          }
+        ],
+        "name": "withdraw",
+        "payable": false
+      },
+      "contractInputsValues": {
+        "to": "0x67c6f1dA08Cd99A661ec6f77A060E985d9672baB"
+      }
+    },
+    {
+      "to": "0x8c7c1C76f32277EDc12B28440224fEF0f6985462",
+      "value": "100000000000000000",
+      "data": null,
+      "contractMethod": {
+        "inputs": [
+          {
+            "internalType": "uint256",
+            "name": "minTokens",
+            "type": "uint256"
+          }
+        ],
+        "name": "mint",
+        "payable": true
+      },
+      "contractInputsValues": {
+        "minTokens": "875000000000000000000"
+      }
+    },
+    {
+      "to": "0x8c7c1C76f32277EDc12B28440224fEF0f6985462",
+      "value": "0",
+      "data": null,
+      "contractMethod": {
+        "inputs": [
+          {
+            "internalType": "address",
+            "name": "to",
+            "type": "address"
+          }
+        ],
+        "name": "withdraw",
+        "payable": false
+      },
+      "contractInputsValues": {
+        "to": "0x67c6f1dA08Cd99A661ec6f77A060E985d9672baB"
+      }
+    },
+    {
+      "to": "0x8c7c1C76f32277EDc12B28440224fEF0f6985462",
+      "value": "100000000000000000",
+      "data": null,
+      "contractMethod": {
+        "inputs": [
+          {
+            "internalType": "uint256",
+            "name": "minTokens",
+            "type": "uint256"
+          }
+        ],
+        "name": "mint",
+        "payable": true
+      },
+      "contractInputsValues": {
+        "minTokens": "875000000000000000000"
+      }
+    },
+    {
+      "to": "0x8c7c1C76f32277EDc12B28440224fEF0f6985462",
+      "value": "0",
+      "data": null,
+      "contractMethod": {
+        "inputs": [
+          {
+            "internalType": "address",
+            "name": "to",
+            "type": "address"
+          }
+        ],
+        "name": "withdraw",
+        "payable": false
+      },
+      "contractInputsValues": {
+        "to": "0x67c6f1dA08Cd99A661ec6f77A060E985d9672baB"
+      }
+    },
+    {
+      "to": "0x8c7c1C76f32277EDc12B28440224fEF0f6985462",
+      "value": "100000000000000000",
+      "data": null,
+      "contractMethod": {
+        "inputs": [
+          {
+            "internalType": "uint256",
+            "name": "minTokens",
+            "type": "uint256"
+          }
+        ],
+        "name": "mint",
+        "payable": true
+      },
+      "contractInputsValues": {
+        "minTokens": "875000000000000000000"
+      }
+    },
+    {
+      "to": "0x8c7c1C76f32277EDc12B28440224fEF0f6985462",
+      "value": "0",
+      "data": null,
+      "contractMethod": {
+        "inputs": [
+          {
+            "internalType": "address",
+            "name": "to",
+            "type": "address"
+          }
+        ],
+        "name": "withdraw",
+        "payable": false
+      },
+      "contractInputsValues": {
+        "to": "0x67c6f1dA08Cd99A661ec6f77A060E985d9672baB"
+      }
+    },
+    {
+      "to": "0x8c7c1C76f32277EDc12B28440224fEF0f6985462",
+      "value": "100000000000000000",
+      "data": null,
+      "contractMethod": {
+        "inputs": [
+          {
+            "internalType": "uint256",
+            "name": "minTokens",
+            "type": "uint256"
+          }
+        ],
+        "name": "mint",
+        "payable": true
+      },
+      "contractInputsValues": {
+        "minTokens": "875000000000000000000"
+      }
+    },
+    {
+      "to": "0x8c7c1C76f32277EDc12B28440224fEF0f6985462",
+      "value": "0",
+      "data": null,
+      "contractMethod": {
+        "inputs": [
+          {
+            "internalType": "address",
+            "name": "to",
+            "type": "address"
+          }
+        ],
+        "name": "withdraw",
+        "payable": false
+      },
+      "contractInputsValues": {
+        "to": "0x67c6f1dA08Cd99A661ec6f77A060E985d9672baB"
+      }
+    },
+    {
+      "to": "0x8c7c1C76f32277EDc12B28440224fEF0f6985462",
+      "value": "100000000000000000",
+      "data": null,
+      "contractMethod": {
+        "inputs": [
+          {
+            "internalType": "uint256",
+            "name": "minTokens",
+            "type": "uint256"
+          }
+        ],
+        "name": "mint",
+        "payable": true
+      },
+      "contractInputsValues": {
+        "minTokens": "875000000000000000000"
+      }
+    },
+    {
+      "to": "0x8c7c1C76f32277EDc12B28440224fEF0f6985462",
+      "value": "0",
+      "data": null,
+      "contractMethod": {
+        "inputs": [
+          {
+            "internalType": "address",
+            "name": "to",
+            "type": "address"
+          }
+        ],
+        "name": "withdraw",
+        "payable": false
+      },
+      "contractInputsValues": {
+        "to": "0x67c6f1dA08Cd99A661ec6f77A060E985d9672baB"
+      }
+    },
+    {
+      "to": "0x8c7c1C76f32277EDc12B28440224fEF0f6985462",
+      "value": "100000000000000000",
+      "data": null,
+      "contractMethod": {
+        "inputs": [
+          {
+            "internalType": "uint256",
+            "name": "minTokens",
+            "type": "uint256"
+          }
+        ],
+        "name": "mint",
+        "payable": true
+      },
+      "contractInputsValues": {
+        "minTokens": "875000000000000000000"
+      }
+    },
+    {
+      "to": "0x8c7c1C76f32277EDc12B28440224fEF0f6985462",
+      "value": "0",
+      "data": null,
+      "contractMethod": {
+        "inputs": [
+          {
+            "internalType": "address",
+            "name": "to",
+            "type": "address"
+          }
+        ],
+        "name": "withdraw",
+        "payable": false
+      },
+      "contractInputsValues": {
+        "to": "0x67c6f1dA08Cd99A661ec6f77A060E985d9672baB"
+      }
+    },
+    {
+      "to": "0x8c7c1C76f32277EDc12B28440224fEF0f6985462",
+      "value": "100000000000000000",
+      "data": null,
+      "contractMethod": {
+        "inputs": [
+          {
+            "internalType": "uint256",
+            "name": "minTokens",
+            "type": "uint256"
+          }
+        ],
+        "name": "mint",
+        "payable": true
+      },
+      "contractInputsValues": {
+        "minTokens": "875000000000000000000"
+      }
+    },
+    {
+      "to": "0x8c7c1C76f32277EDc12B28440224fEF0f6985462",
+      "value": "0",
+      "data": null,
+      "contractMethod": {
+        "inputs": [
+          {
+            "internalType": "address",
+            "name": "to",
+            "type": "address"
+          }
+        ],
+        "name": "withdraw",
+        "payable": false
+      },
+      "contractInputsValues": {
+        "to": "0x67c6f1dA08Cd99A661ec6f77A060E985d9672baB"
+      }
+    },
+    {
+      "to": "0x8daA5B21136de9B5ac43fd89fDc98cDe934E7863",
+      "value": "0",
+      "data": null,
+      "contractMethod": {
+        "inputs": [
+          {
+            "internalType": "address",
+            "name": "to",
+            "type": "address"
+          },
+          {
+            "internalType": "uint256",
+            "name": "amount",
+            "type": "uint256"
+          }
+        ],
+        "name": "transfer",
+        "payable": false
+      },
+      "contractInputsValues": {
+        "to": "0x47602E8a26dE46fa8e00B1449017ab154ceDFA42",
+        "amount": "25000000000000000000000"
+      }
+    }
+  ]
+}
