@@ -26,6 +26,11 @@ export const ELDER_ARTIFACTS_ADDRESS =
 export const ELDRITCH_GLYPHS_ADDRESS =
   (process.env.NEXT_PUBLIC_ELDRITCH_GLYPHS_ADDRESS || "") as `0x${string}`;
 
+// The Offering (self-serve First Cultists claim). Unset until deployed — the
+// OfferingPanel renders nothing when this is empty.
+export const OFFERING_ADDRESS =
+  (process.env.NEXT_PUBLIC_OFFERING_ADDRESS || "") as `0x${string}`;
+
 // ── ABIs ──
 // Using parseAbi from viem so wagmi v2 hooks receive properly typed ABI objects.
 
@@ -89,3 +94,15 @@ export const ELDRITCH_GLYPHS_ABI = parseAbi([
   "event GlyphMinted(uint256 indexed tokenId, address indexed recipient, uint8 tier, uint8 runeIndex, uint8 loreIndex, uint256 epochId)",
   "event GlyphsBatchMinted(uint256 indexed requestId, address indexed recipient, uint256 epochId, uint256 numGlyphs)",
 ]);
+
+export const OFFERING_ABI = parseAbi([
+  "function claim()",
+  "function claimed(address) view returns (bool)",
+  "function totalClaims() view returns (uint256)",
+  "function seatsRemaining() view returns (uint256)",
+  "function seatsRemainingToday() view returns (uint256)",
+  "function CLAIM_AMOUNT() view returns (uint256)",
+  "function MAX_CLAIMS() view returns (uint256)",
+  "function MIN_ETH_BALANCE() view returns (uint256)",
+  "event OfferingClaimed(address indexed vessel, uint256 amount, uint256 claimNumber)",
+] as const);

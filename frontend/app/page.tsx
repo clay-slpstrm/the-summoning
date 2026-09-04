@@ -13,6 +13,7 @@ import CultRankBar from "@/components/rank/CultRankBar";
 import Leaderboard from "@/components/rank/Leaderboard";
 import SacrificePanel from "@/components/sacrifice/SacrificePanel";
 import BeginSummoning from "@/components/sacrifice/BeginSummoning";
+import OfferingPanel from "@/components/offering/OfferingPanel";
 import ClaimArtifact from "@/components/claim/ClaimArtifact";
 import ClaimGlyphsPanel from "@/components/claim/ClaimGlyphsPanel";
 import PreLaunchModal from "@/components/layout/PreLaunchModal";
@@ -99,6 +100,11 @@ export default function Home() {
 
           {/* Epoch status */}
           <EpochStatus />
+        </div>
+
+        {/* The Offering — treasury seeding of the first 250 believers (self-retires) */}
+        <div className="max-w-md mx-auto mt-6 sm:mt-8">
+          <OfferingPanel />
         </div>
 
         {/* Sacrifice / Begin / Claim panel — the game is self-perpetuating, so the idle
