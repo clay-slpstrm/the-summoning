@@ -32,6 +32,14 @@ export default function OfferingPanel() {
     query: { enabled: !!OFFERING_ADDRESS, refetchInterval: REFRESH_MS },
   });
 
+  const { data: totalClaims } = useReadContract({
+    address: OFFERING_ADDRESS,
+    abi: OFFERING_ABI,
+    functionName: "totalClaims",
+    chainId: activeChain.id,
+    query: { enabled: !!OFFERING_ADDRESS, refetchInterval: REFRESH_MS },
+  });
+
   const { data: seatsToday } = useReadContract({
     address: OFFERING_ADDRESS,
     abi: OFFERING_ABI,
@@ -82,7 +90,9 @@ export default function OfferingPanel() {
   if (seatsRemaining === undefined) return null;
   if (seatsRemaining === 0n && !hasClaimed) return null;
 
-  const claimedSeats = 250n - (seatsRemaining ?? 0n);
+  // totalClaims, NOT 250 - seatsRemaining: seatsRemaining is funding-bound, so a
+  // partially-funded Offering would otherwise display phantom "claimed" seats.
+  const claimedSeats = totalClaims ?? 0n;
   const todayGone = (seatsToday ?? 0n) === 0n;
   const poorVessel =
     minEth !== undefined && ethBalance !== undefined && ethBalance.value < minEth;
